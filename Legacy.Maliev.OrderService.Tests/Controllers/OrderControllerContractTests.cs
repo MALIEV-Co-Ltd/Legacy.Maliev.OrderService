@@ -26,6 +26,8 @@ public sealed class OrderControllerContractTests
         var method = typeof(OrdersController).GetMethod(methodName);
         Assert.NotNull(method);
         Assert.Equal(route, Assert.Single(method.GetCustomAttributes<HttpMethodAttribute>()).Template);
-        Assert.Equal(permission, Assert.Single(method.GetCustomAttributes<RequirePermissionAttribute>()).Permission);
+        var authorization = Assert.Single(method.GetCustomAttributes<RequirePermissionAttribute>());
+        Assert.Equal(permission, authorization.Permission);
+        Assert.False(authorization.RequireLiveCheck);
     }
 }
