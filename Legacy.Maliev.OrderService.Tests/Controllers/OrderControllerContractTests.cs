@@ -12,6 +12,17 @@ public sealed class OrderControllerContractTests
     [Theory, MemberData(nameof(Controllers))] public void Controllers_PreserveRoutesAndRequireAuthentication(Type t, string route) { Assert.Equal(route, t.GetCustomAttribute<RouteAttribute>()?.Template); Assert.NotNull(t.GetCustomAttribute<AuthorizeAttribute>()); }
     [Fact] public void Controllers_PreserveFiftyEightActionsAndTemplates() { var m = Controllers.SelectMany(x => ((Type)x[0]).GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly)).ToArray(); Assert.Equal(58, m.Length); Assert.Equal(58, m.SelectMany(x => x.GetCustomAttributes<HttpMethodAttribute>()).Count()); Assert.All(m, x => Assert.Single(x.GetCustomAttributes<RequirePermissionAttribute>())); }
     [Fact]
+    public void SignedPermissionClaims_AreAuthoritativeWithoutForcedLiveIamChecks()
+    {
+        var methods = Controllers.SelectMany(value =>
+            ((Type)value[0]).GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly));
+        Assert.All(methods, method =>
+        {
+            var authorization = Assert.Single(method.GetCustomAttributes<RequirePermissionAttribute>());
+            Assert.False(authorization.RequireLiveCheck);
+        });
+    }
+    [Fact]
     public void CustomerOrderBoundary_HasDedicatedLeastPrivilegeRoutes()
     {
         AssertRouteAndPermission("GetCustomerOrdersAsync", "customers/{customerId:int}", "legacy.customer-orders.read");
