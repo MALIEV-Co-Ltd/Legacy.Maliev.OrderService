@@ -1,0 +1,7 @@
+<Solution>
+  <Project Path="Legacy.Maliev.OrderService.Api/Legacy.Maliev.OrderService.Api.csproj" />
+  <Project Path="Legacy.Maliev.OrderService.Application/Legacy.Maliev.OrderService.Application.csproj" />
+  <Project Path="Legacy.Maliev.OrderService.Data/Legacy.Maliev.OrderService.Data.csproj" />
+  <Project Path="Legacy.Maliev.OrderService.Domain/Legacy.Maliev.OrderService.Domain.csproj" />
+  <Project Path="Legacy.Maliev.OrderService.Tests/Legacy.Maliev.OrderService.Tests.csproj" />
+</Solution>
