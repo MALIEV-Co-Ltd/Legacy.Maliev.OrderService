@@ -16,7 +16,7 @@ public sealed class OrderPostgresMigrationTests : IAsyncLifetime
     public async Task CustomerOrderBoundary_EnforcesOwnershipAndIdempotentCancellation()
     {
         await using var oc = OC();
-        await using var sc = SC();
+        await using var sc = SC(retryOnFailure: true);
         await Task.WhenAll(oc.Database.MigrateAsync(), sc.Database.MigrateAsync());
         var repository = Repo(oc, sc);
         var category = await repository.CreateCategoryAsync(new("Machining"), default);
@@ -45,5 +45,5 @@ public sealed class OrderPostgresMigrationTests : IAsyncLifetime
         Assert.Equal(2, (await repository.GetHistoryAsync(order.Id, default)).Count);
     }
     private OrderRepository Repo(OrderDbContext o, OrderStatusDbContext s) { var c = new Mock<IOrderCache>(); c.Setup(x => x.GetAsync<OrderResponse>(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync((OrderResponse?)null); return new(o, s, c.Object, TimeProvider.System); }
-    private static UpsertOrderRequest Request(int p, bool finished = true) => new(42, null, "Part", "Part", p, null, null, null, 10, 3, 10m, 5m, 764, 5, DateTime.UtcNow.Date.AddDays(5), finished ? DateTime.UtcNow.Date.AddDays(3) : null, null, false, true, true, null); private OrderDbContext OC() => new(new DbContextOptionsBuilder<OrderDbContext>().UseNpgsql(op.GetConnectionString()).Options); private OrderStatusDbContext SC() => new(new DbContextOptionsBuilder<OrderStatusDbContext>().UseNpgsql(sp.GetConnectionString()).Options);
+    private static UpsertOrderRequest Request(int p, bool finished = true) => new(42, null, "Part", "Part", p, null, null, null, 10, 3, 10m, 5m, 764, 5, DateTime.UtcNow.Date.AddDays(5), finished ? DateTime.UtcNow.Date.AddDays(3) : null, null, false, true, true, null); private OrderDbContext OC() => new(new DbContextOptionsBuilder<OrderDbContext>().UseNpgsql(op.GetConnectionString()).Options); private OrderStatusDbContext SC(bool retryOnFailure = false) => new(new DbContextOptionsBuilder<OrderStatusDbContext>().UseNpgsql(sp.GetConnectionString(), options => { if (retryOnFailure) options.EnableRetryOnFailure(); }).Options);
 }
