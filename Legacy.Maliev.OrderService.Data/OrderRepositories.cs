@@ -1,4 +1,5 @@
 using System.Data;
+using System.Data.Common;
 using Legacy.Maliev.OrderService.Application.Interfaces;
 using Legacy.Maliev.OrderService.Application.Models;
 using Legacy.Maliev.OrderService.Domain;
@@ -11,13 +12,18 @@ public sealed class OrderRepository(OrderDbContext orders, OrderStatusDbContext 
     public async Task<bool> DeleteOrderAsync(int id, CancellationToken c) { var d = await orders.Orders.Where(x => x.Id == id).ExecuteDeleteAsync(c) == 1; if (d) await cache.RemoveAsync(Key(id), c); return d; }
     public async Task<OrderResponse?> GetOrderAsync(int id, CancellationToken c) { var v = await cache.GetAsync<OrderResponse>(Key(id), c); if (v is not null) return v; v = await ReadOrder(id, c); if (v is not null) await cache.SetAsync(Key(id), v, TimeSpan.FromMinutes(2), c); return v; }
     public async Task<PaginatedResponse<OrderResponse>?> GetOrdersAsync(int? customerId, bool pending, OrderSortType? sort, string? search, int page, int size, CancellationToken c) { IQueryable<Order> q = orders.Orders.AsNoTracking(); if (customerId is not null) q = q.Where(x => x.CustomerId == customerId); if (pending) q = q.Where(x => x.PromisedDate != null && x.FinishedDate == null); if (!string.IsNullOrWhiteSpace(search)) { var v = search.Trim(); var num = int.TryParse(v, out var id); var p = $"%{v}%"; q = q.Where(x => (num && (x.Id == id || x.CustomerId == id)) || (x.Name != null && EF.Functions.ILike(x.Name, p)) || (x.Description != null && EF.Functions.ILike(x.Description, p)) || (x.TrackingNumber != null && EF.Functions.ILike(x.TrackingNumber, p))); } q = sort switch { OrderSortType.OrderId_Descending => q.OrderByDescending(x => x.Id), OrderSortType.OrderCreatedDate_Ascending => q.OrderBy(x => x.CreatedDate), OrderSortType.OrderCreatedDate_Descending => q.OrderByDescending(x => x.CreatedDate), OrderSortType.OrderModifiedDate_Ascending => q.OrderBy(x => x.ModifiedDate), OrderSortType.OrderModifiedDate_Descending => q.OrderByDescending(x => x.ModifiedDate), _ => q.OrderBy(x => x.Id) }; return await Page(ProjectOrders(q), page, size, c); }
-    public async Task<UpdateResult> UpdateOrderAsync(int id, UpsertOrderRequest r, DateTimeOffset? expected, CancellationToken c) { var e = await orders.Orders.FindAsync([id], c); if (e is null) return UpdateResult.NotFound; if (expected is not null) orders.Entry(e).Property(x => x.ModifiedDate).OriginalValue = expected.Value.UtcDateTime; Map(e, r).ModifiedDate = Now(); try { await orders.SaveChangesAsync(c); await cache.RemoveAsync(Key(id), c); return UpdateResult.Updated; } catch (DbUpdateConcurrencyException) { return UpdateResult.Conflict; } }
+    public async Task<UpdateResult> UpdateOrderAsync(int id, UpsertOrderRequest r, DateTimeOffset? expected, CancellationToken c) { var e = await orders.Orders.FindAsync([id], c); if (e is null) return UpdateResult.NotFound; if (expected is not null) orders.Entry(e).Property(x => x.ModifiedDate).OriginalValue = expected.Value.UtcDateTime; var accepted = await HasLatestStatusAsync(id, "Accepted", c); Map(e, r).ModifiedDate = Now(); if (accepted) e.AllowCancellation = false; try { await orders.SaveChangesAsync(c); await cache.RemoveAsync(Key(id), c); return UpdateResult.Updated; } catch (DbUpdateConcurrencyException) { return UpdateResult.Conflict; } }
     public async Task<CustomerOrderDetails?> GetCustomerOrderAsync(int customerId, int orderId, CancellationToken c) { var order = await ProjectOrders(orders.Orders.AsNoTracking().Where(x => x.Id == orderId && x.CustomerId == customerId)).SingleOrDefaultAsync(c); if (order is null) return null; var process = await GetProcessAsync(order.ProcessId, c); var history = await GetHistoryAsync(orderId, c); var files = await GetFilesAsync(orderId, c); return new(order, process, history, files); }
     public async Task<UpdateResult> CancelCustomerOrderAsync(int customerId, int orderId, CancellationToken c)
     {
         var order = await orders.Orders.SingleOrDefaultAsync(x => x.Id == orderId && x.CustomerId == customerId, c);
         if (order is null) return UpdateResult.NotFound;
         var latest = await GetLatestStatusAsync(orderId, c);
+        if (string.Equals(latest?.Name, "Accepted", StringComparison.OrdinalIgnoreCase))
+        {
+            return UpdateResult.InvalidTransition;
+        }
+
         var alreadyCancelled = string.Equals(latest?.Name, "Cancelled", StringComparison.OrdinalIgnoreCase);
         if (!alreadyCancelled)
         {
@@ -55,14 +61,17 @@ public sealed class OrderRepository(OrderDbContext orders, OrderStatusDbContext 
     public async Task<UpdateResult> TransitionAsync(int orderId, string name, CancellationToken c) { var id = await statuses.Statuses.Where(x => x.Name != null && x.Name.ToLower() == name.ToLower()).Select(x => (int?)x.Id).SingleOrDefaultAsync(c); return id is null ? UpdateResult.NotFound : await TransitionAsync(orderId, id.Value, c); }
     public async Task<UpdateResult> TransitionAsync(int orderId, int statusId, CancellationToken c)
     {
-        if (!await orders.Orders.AnyAsync(x => x.Id == orderId, c)
-            || !await statuses.Statuses.AnyAsync(x => x.Id == statusId, c))
+        var target = await statuses.Statuses
+            .Where(x => x.Id == statusId)
+            .Select(x => new { x.Name })
+            .SingleOrDefaultAsync(c);
+        if (!await orders.Orders.AnyAsync(x => x.Id == orderId, c) || target is null)
         {
             return UpdateResult.NotFound;
         }
 
         var strategy = statuses.Database.CreateExecutionStrategy();
-        return await strategy.ExecuteAsync(async () =>
+        var transition = await strategy.ExecuteAsync(async () =>
         {
             await using var tx = await statuses.Database.BeginTransactionAsync(IsolationLevel.Serializable, c);
             var current = await statuses.History
@@ -70,6 +79,13 @@ public sealed class OrderRepository(OrderDbContext orders, OrderStatusDbContext 
                 .OrderByDescending(x => x.Id)
                 .Select(x => (int?)x.OrderStatusId)
                 .FirstOrDefaultAsync(c);
+            if (current == statusId
+                && string.Equals(target.Name, "Accepted", StringComparison.OrdinalIgnoreCase))
+            {
+                await tx.CommitAsync(c);
+                return UpdateResult.Updated;
+            }
+
             if (current is not null
                 && !await statuses.Transitions.AnyAsync(
                     x => x.OrderStatusId == current && x.PossibleStatusId == statusId,
@@ -99,8 +115,57 @@ public sealed class OrderRepository(OrderDbContext orders, OrderStatusDbContext 
                 return UpdateResult.Conflict;
             }
         });
+
+        if (transition != UpdateResult.Updated
+            || !string.Equals(target.Name, "Accepted", StringComparison.OrdinalIgnoreCase))
+        {
+            return transition;
+        }
+
+        return await ConvergeAcceptedCancellationAsync(orderId, c);
     }
     public Task<bool> DeleteHistoryAsync(int id, CancellationToken c) => Delete(statuses.History, id, c); public async Task<OrderStatusResponse?> GetLatestStatusAsync(int orderId, CancellationToken c) => await statuses.History.AsNoTracking().Where(x => x.OrderId == orderId).OrderByDescending(x => x.Id).Select(x => new OrderStatusResponse(x.OrderStatus!.Id, x.OrderStatus.Name, x.OrderStatus.Description, x.CreatedDate, x.ModifiedDate)).FirstOrDefaultAsync(c); public async Task<IReadOnlyList<OrderStatusHistoryResponse>> GetHistoryAsync(int orderId, CancellationToken c) => await statuses.History.AsNoTracking().Where(x => x.OrderId == orderId).OrderBy(x => x.CreatedDate).Select(x => new OrderStatusHistoryResponse(x.Id, x.OrderId, x.OrderStatusId, x.OrderStatus!.Name, x.OrderStatus.Description, x.CreatedDate, x.ModifiedDate)).ToListAsync(c); public async Task<UpdateResult> UpdateHistoryAsync(int id, UpsertOrderStatusHistoryRequest r, DateTimeOffset? expected, CancellationToken c) { var e = await statuses.History.FindAsync([id], c); if (e is null) return UpdateResult.NotFound; if (expected is not null) statuses.Entry(e).Property(x => x.ModifiedDate).OriginalValue = expected.Value.UtcDateTime; e.OrderId = r.OrderId; e.OrderStatusId = r.OrderStatusId; e.ModifiedDate = Now(); try { await statuses.SaveChangesAsync(c); return UpdateResult.Updated; } catch (DbUpdateConcurrencyException) { return UpdateResult.Conflict; } }
+    private async Task<UpdateResult> ConvergeAcceptedCancellationAsync(int orderId, CancellationToken c)
+    {
+        try
+        {
+            var modifiedDate = Now();
+            var changed = await orders.Orders
+                .Where(x => x.Id == orderId && x.AllowCancellation)
+                .ExecuteUpdateAsync(
+                    setters => setters
+                        .SetProperty(x => x.AllowCancellation, false)
+                        .SetProperty(x => x.ModifiedDate, modifiedDate),
+                    c);
+            if (changed == 1)
+            {
+                var tracked = orders.ChangeTracker.Entries<Order>()
+                    .SingleOrDefault(x => x.Entity.Id == orderId);
+                if (tracked is not null)
+                {
+                    tracked.Property(x => x.AllowCancellation).CurrentValue = false;
+                    tracked.Property(x => x.AllowCancellation).OriginalValue = false;
+                    tracked.Property(x => x.ModifiedDate).CurrentValue = modifiedDate;
+                    tracked.Property(x => x.ModifiedDate).OriginalValue = modifiedDate;
+                }
+            }
+
+            await cache.RemoveAsync(Key(orderId), c);
+            return UpdateResult.Updated;
+        }
+        catch (Exception exception) when (exception is DbUpdateException or DbException)
+        {
+            return UpdateResult.Conflict;
+        }
+    }
+
+    private Task<bool> HasLatestStatusAsync(int orderId, string name, CancellationToken c) =>
+        statuses.History
+            .Where(x => x.OrderId == orderId)
+            .OrderByDescending(x => x.Id)
+            .Select(x => EF.Functions.ILike(x.OrderStatus!.Name!, name))
+            .FirstOrDefaultAsync(c);
+
     private DateTime Now() => clock.GetUtcNow().UtcDateTime; private static string Key(int id) => $"order:{id}"; private Task<OrderResponse?> ReadOrder(int id, CancellationToken c) => ProjectOrders(orders.Orders.AsNoTracking().Where(x => x.Id == id)).SingleOrDefaultAsync(c); private static async Task<PaginatedResponse<T>?> Page<T>(IQueryable<T> q, int p, int s, CancellationToken c) { p = Math.Max(p, 1); s = Math.Clamp(s, 1, 250); var n = await q.CountAsync(c); if (n == 0) return null; return new(await q.Skip((p - 1) * s).Take(s).ToListAsync(c), p, (int)Math.Ceiling(n / (double)s), n); }
     private static Order Map(Order x, UpsertOrderRequest r) { x.CustomerId = r.CustomerId; x.EmployeeId = r.EmployeeId; x.Name = r.Name; x.Description = r.Description; x.ProcessId = r.ProcessId; x.MaterialId = r.MaterialId; x.SurfaceFinishId = r.SurfaceFinishId; x.ColorId = r.ColorId; x.Quantity = r.Quantity; x.Manufactured = r.Manufactured; x.UnitPrice = r.UnitPrice; x.DiscountPercent = r.DiscountPercent; x.CurrencyId = r.CurrencyId; x.LeadTime = r.LeadTime; x.PromisedDate = r.PromisedDate; x.FinishedDate = r.FinishedDate; x.Comment = r.Comment; x.AllowSocialMedia = r.AllowSocialMedia; x.AllowCancellation = r.AllowCancellation; x.AllowPayment = r.AllowPayment; x.TrackingNumber = r.TrackingNumber; return x; }
     private static IQueryable<OrderResponse> ProjectOrders(IQueryable<Order> q) => q.Select(x => new OrderResponse(x.Id, x.CustomerId, x.EmployeeId, x.Name, x.Description, x.ProcessId, x.MaterialId, x.SurfaceFinishId, x.ColorId, x.Quantity, x.Manufactured, x.Remaining, x.UnitPrice, x.DiscountPercent, x.Subtotal, x.CurrencyId, x.LeadTime, x.PromisedDate, x.FinishedDate, x.Turnaround, x.Comment, x.AllowSocialMedia, x.AllowCancellation, x.AllowPayment, x.TrackingNumber, x.CreatedDate, x.ModifiedDate)); private static IQueryable<OrderFileResponse> ProjectFiles(IQueryable<OrderFile> q) => q.Select(x => new OrderFileResponse(x.Id, x.OrderId, x.Bucket, x.ObjectName, x.CreatedDate, x.ModifiedDate)); private static IQueryable<OrderStatusResponse> ProjectStatuses(IQueryable<OrderStatus> q) => q.Select(x => new OrderStatusResponse(x.Id, x.Name, x.Description, x.CreatedDate, x.ModifiedDate)); private static CategoryResponse Cat(Category x) => new(x.Id, x.Name, x.CreatedDate, x.ModifiedDate); private static FileFormatResponse Format(FileFormat x) => new(x.Id, x.Name, x.Extension, x.CreatedDate, x.ModifiedDate); private static ProcessResponse Proc(Process x) => new(x.Id, x.CategoryId, x.Name, x.CreatedDate, x.ModifiedDate); private static OrderFileResponse File(OrderFile x) => new(x.Id, x.OrderId, x.Bucket, x.ObjectName, x.CreatedDate, x.ModifiedDate); private static OrderStatusResponse Status(OrderStatus x) => new(x.Id, x.Name, x.Description, x.CreatedDate, x.ModifiedDate);
