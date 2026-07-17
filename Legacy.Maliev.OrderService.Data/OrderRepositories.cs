@@ -19,13 +19,23 @@ public sealed class OrderRepository(OrderDbContext orders, OrderStatusDbContext 
         if (!string.IsNullOrWhiteSpace(search))
         {
             var v = search.Trim();
-            var num = int.TryParse(v, out var id);
-            var p = $"%{v}%";
-            q = q.Where(x =>
-                (num && (x.Id == id || x.CustomerId == id))
-                || (x.Name != null && EF.Functions.ILike(x.Name, p))
-                || (x.Description != null && EF.Functions.ILike(x.Description, p))
-                || (x.TrackingNumber != null && EF.Functions.ILike(x.TrackingNumber, p)));
+            if (int.TryParse(v, out var id))
+            {
+                q = q.Where(x => x.Id == id);
+            }
+            else
+            {
+                var p = $"%{v}%";
+                q = pending
+                    ? q.Where(x =>
+                        (x.Name != null && EF.Functions.ILike(x.Name, p))
+                        || (x.Description != null && EF.Functions.ILike(x.Description, p)))
+                    : q.Where(x =>
+                        (x.Name != null && EF.Functions.ILike(x.Name, p))
+                        || (x.Description != null && EF.Functions.ILike(x.Description, p))
+                        || (x.TrackingNumber != null && EF.Functions.ILike(x.TrackingNumber, p))
+                        || (x.Comment != null && EF.Functions.ILike(x.Comment, p)));
+            }
         }
 
         q = sort switch
