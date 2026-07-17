@@ -23,10 +23,46 @@ public sealed class HistoriesController(IOrderService s, IIdempotencyStore idem)
     [HttpPost("{orderId:int}/reviewed"), RequirePermission(OrderPermissions.StatusWrite, IsCritical = true)] public Task<IActionResult> CreateOrderHistoryReviewedStatusAsync(int orderId, CancellationToken c) => Named(orderId, "Reviewed", c);
     [HttpPost("{orderId:int}/reviewing"), RequirePermission(OrderPermissions.StatusWrite, IsCritical = true)] public Task<IActionResult> CreateOrderHistoryReviewingStatusAsync(int orderId, CancellationToken c) => Named(orderId, "Reviewing", c);
     [HttpPost("{orderId:int}/shipped"), RequirePermission(OrderPermissions.StatusWrite, IsCritical = true)] public Task<IActionResult> CreateOrderHistoryShippedStatusAsync(int orderId, CancellationToken c) => Named(orderId, "Shipped", c);
-    [HttpPost("{orderId:int}/{statusId:int}"), RequirePermission(OrderPermissions.StatusWrite, IsCritical = true)] public async Task<IActionResult> CreateOrderStatusEntryAsync(int orderId, int statusId, [FromHeader(Name = "Idempotency-Key")] string? key, CancellationToken c) { if (!string.IsNullOrWhiteSpace(key) && await idem.GetAsync<TransitionResponse>("order-status", key, c) is not null) return StatusCode(StatusCodes.Status201Created); var result = await s.TransitionAsync(orderId, statusId, c); if (result == UpdateResult.Updated && !string.IsNullOrWhiteSpace(key)) await idem.SetAsync("order-status", key, new TransitionResponse("Updated"), c); return Result(result); }
+    [HttpPost("{orderId:int}/{statusId:int}"), RequirePermission(OrderPermissions.StatusWrite, IsCritical = true)]
+    public async Task<IActionResult> CreateOrderStatusEntryAsync(int orderId, int statusId, [FromHeader(Name = "Idempotency-Key")] string? key, CancellationToken c)
+    {
+        try
+        {
+            var request = new TransitionRequest(orderId, statusId);
+            var lookup = await IdempotentRequests.LookupAsync<TransitionRequest, TransitionResponse>(idem, User, "order-status", key, request, c);
+            if (lookup.Conflict) return Conflict("Idempotency-Key was already used for a different request.");
+            if (lookup.InProgress) return Conflict("An idempotent request with this key is already in progress.");
+            if (lookup.Response is not null) return StatusCode(StatusCodes.Status201Created);
+            UpdateResult result;
+            try
+            {
+                result = await s.TransitionAsync(orderId, statusId, c);
+            }
+            catch
+            {
+                await IdempotentRequests.ReleaseAfterFailureAsync(idem, lookup.Context);
+                throw;
+            }
+
+            if (result == UpdateResult.Updated)
+            {
+                await IdempotentRequests.StoreAsync(idem, lookup.Context, new TransitionResponse("Updated"), c);
+            }
+            else
+            {
+                await IdempotentRequests.ReleaseAsync(idem, lookup.Context, c);
+            }
+
+            return Result(result);
+        }
+        catch (IdempotencyStoreUnavailableException)
+        {
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, "Idempotency protection is temporarily unavailable.");
+        }
+    }
     [HttpDelete("{historyId:int}"), RequirePermission(OrderPermissions.StatusDelete)] public async Task<IActionResult> DeleteHistoryAsync(int historyId, CancellationToken c) => await s.DeleteHistoryAsync(historyId, c) ? NoContent() : NotFound();
     [HttpGet("{orderId:int}/latest", Name = "GetLatest"), RequirePermission(OrderPermissions.StatusRead)] public async Task<ActionResult<OrderStatusResponse>> GetLatestAsync(int orderId, CancellationToken c) { var v = await s.GetLatestStatusAsync(orderId, c); return v is null ? NotFound() : v; }
     [HttpGet("{orderId:int}", Name = "GetHistory"), RequirePermission(OrderPermissions.StatusRead)] public async Task<ActionResult<IReadOnlyList<OrderStatusHistoryResponse>>> GetOrderHistoryAsync(int orderId, CancellationToken c) { var v = await s.GetHistoryAsync(orderId, c); return v.Count == 0 ? NotFound() : Ok(v); }
     [HttpPut("{historyId:int}"), RequirePermission(OrderPermissions.StatusWrite, IsCritical = true)] public async Task<IActionResult> UpdateOrderHistoryAsync(int historyId, UpsertOrderStatusHistoryRequest i, [FromHeader(Name = "X-Expected-Modified-Date")] DateTimeOffset? expected, CancellationToken c) => Result(await s.UpdateHistoryAsync(historyId, i, expected, c));
-    private async Task<IActionResult> Named(int id, string name, CancellationToken c) => Result(await s.TransitionAsync(id, name, c)); private IActionResult Result(UpdateResult r) => r switch { UpdateResult.Updated => StatusCode(StatusCodes.Status201Created), UpdateResult.InvalidTransition => Conflict("Order status transition is not permitted."), UpdateResult.Conflict => Conflict("Concurrent status transition detected."), _ => NotFound() }; private sealed record TransitionResponse(string Result);
+    private async Task<IActionResult> Named(int id, string name, CancellationToken c) => Result(await s.TransitionAsync(id, name, c)); private IActionResult Result(UpdateResult r) => r switch { UpdateResult.Updated => StatusCode(StatusCodes.Status201Created), UpdateResult.InvalidTransition => Conflict("Order status transition is not permitted."), UpdateResult.Conflict => Conflict("Concurrent status transition detected."), _ => NotFound() }; private sealed record TransitionRequest(int OrderId, int StatusId); private sealed record TransitionResponse(string Result);
 }

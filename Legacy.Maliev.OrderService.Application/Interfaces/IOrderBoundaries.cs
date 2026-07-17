@@ -13,4 +13,12 @@ public interface IOrderService
     Task<UpdateResult> TransitionAsync(int orderId, int statusId, CancellationToken c); Task<UpdateResult> TransitionAsync(int orderId, string statusName, CancellationToken c); Task<bool> DeleteHistoryAsync(int id, CancellationToken c); Task<OrderStatusResponse?> GetLatestStatusAsync(int orderId, CancellationToken c); Task<IReadOnlyList<OrderStatusHistoryResponse>> GetHistoryAsync(int orderId, CancellationToken c); Task<UpdateResult> UpdateHistoryAsync(int id, UpsertOrderStatusHistoryRequest r, DateTimeOffset? expected, CancellationToken c);
 }
 public interface IOrderCache { Task<T?> GetAsync<T>(string k, CancellationToken c) where T : class; Task SetAsync<T>(string k, T v, TimeSpan t, CancellationToken c) where T : class; Task RemoveAsync(string k, CancellationToken c); }
-public interface IIdempotencyStore { Task<T?> GetAsync<T>(string s, string k, CancellationToken c) where T : class; Task SetAsync<T>(string s, string k, T r, CancellationToken c) where T : class; }
+public interface IIdempotencyStore
+{
+    Task<IdempotencyAcquireResult<T>> AcquireAsync<T>(string scope, string key, string requestFingerprint, CancellationToken cancellationToken) where T : class;
+    Task CompleteAsync<T>(string scope, string key, string requestFingerprint, string reservationId, T response, CancellationToken cancellationToken) where T : class;
+    Task ReleaseAsync(string scope, string key, string reservationId, CancellationToken cancellationToken);
+}
+public enum IdempotencyAcquireState { Acquired, Replay, Conflict, InProgress }
+public sealed record IdempotencyAcquireResult<T>(IdempotencyAcquireState State, string? ReservationId, T? Response) where T : class;
+public sealed class IdempotencyStoreUnavailableException(string message, Exception? innerException = null) : Exception(message, innerException);
