@@ -10,5 +10,19 @@ public sealed record OrderStatusResponse(int Id, string? Name, string? Descripti
 public sealed record OrderStatusHistoryResponse(int Id, int OrderId, int OrderStatusId, string? Name, string? Description, DateTime? CreatedDate, DateTime? ModifiedDate); public sealed record UpsertOrderStatusHistoryRequest(int OrderId, int OrderStatusId);
 public sealed record CustomerOrderDetails(OrderResponse Order, ProcessResponse? Process, IReadOnlyList<OrderStatusHistoryResponse> History, IReadOnlyList<OrderFileResponse> Files);
 public sealed record PaginatedResponse<T>(IReadOnlyList<T> Items, int PageIndex, int TotalPages, int TotalRecords) { public bool HasNextPage => PageIndex < TotalPages; public bool HasPreviousPage => PageIndex > 1; }
-public enum OrderSortType { OrderId_Ascending, OrderId_Descending, OrderCreatedDate_Ascending, OrderCreatedDate_Descending, OrderModifiedDate_Ascending, OrderModifiedDate_Descending }
+public enum OrderSortType
+{
+    OrderId_Ascending = 0,
+    OrderId_Descending = 1,
+    OrderCreatedDate_Ascending = 2,
+    OrderCreatedDate_Descending = 3,
+    OrderModifiedDate_Ascending = 4,
+    OrderModifiedDate_Descending = 5,
+    OrderStatus_Ascending = 6,
+    OrderStatus_Descending = 7,
+    OrderRemaining_Ascending = 8,
+    OrderRemaining_Descending = 9,
+    OrderQuantity_Ascending = 10,
+    OrderQuantity_Descending = 11,
+}
 public enum UpdateResult { Updated, NotFound, Conflict, InvalidTransition }

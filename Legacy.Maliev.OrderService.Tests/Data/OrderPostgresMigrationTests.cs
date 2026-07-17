@@ -12,6 +12,32 @@ public sealed class OrderPostgresMigrationTests : IAsyncLifetime
     private readonly PostgreSqlContainer op = new PostgreSqlBuilder("postgres:18-alpine").Build(), sp = new PostgreSqlBuilder("postgres:18-alpine").Build(); public Task InitializeAsync() => Task.WhenAll(op.StartAsync(), sp.StartAsync()); public async Task DisposeAsync() { await op.DisposeAsync(); await sp.DisposeAsync(); }
     [Fact] public async Task Migrations_PreserveComputedOrderCatalogFilesAndTransitionGraph() { await using var oc = OC(); await using var sc = SC(); await Task.WhenAll(oc.Database.MigrateAsync(), sc.Database.MigrateAsync()); var r = Repo(oc, sc); var cat = await r.CreateCategoryAsync(new("Additive"), default); var proc = await r.CreateProcessAsync(new(cat.Id, "FDM"), default); var order = await r.CreateOrderAsync(Request(proc.Id), default); var file = await r.CreateFileAsync(order.Id, "legacy-orders", "orders/1.stl", default); var n = await r.CreateStatusAsync(new("New", "New"), default); var rev = await r.CreateStatusAsync(new("Reviewing", "Reviewing"), default); var shipped = await r.CreateStatusAsync(new("Shipped", "Shipped"), default); sc.Add(new OrderStatusTransition { OrderStatusId = n.Id, PossibleStatusId = rev.Id }); await sc.SaveChangesAsync(); Assert.Equal(UpdateResult.Updated, await r.TransitionAsync(order.Id, n.Id, default)); Assert.Equal(UpdateResult.InvalidTransition, await r.TransitionAsync(order.Id, shipped.Id, default)); Assert.Equal(UpdateResult.Updated, await r.TransitionAsync(order.Id, rev.Id, default)); oc.ChangeTracker.Clear(); var loaded = await r.GetOrderAsync(order.Id, default); Assert.Equal(7, loaded?.Remaining); Assert.Equal(95m, loaded?.Subtotal); Assert.Equal(3, loaded?.Turnaround); Assert.Equal("orders/1.stl", file?.ObjectName); Assert.Equal(2, (await r.GetHistoryAsync(order.Id, default)).Count); Assert.Single(await r.GetAvailableStatusesAsync(n.Id, default)); Assert.Equal(5, await oc.Database.SqlQueryRaw<int>("SELECT COUNT(*)::int AS \"Value\" FROM information_schema.tables WHERE table_schema='public' AND table_name IN ('Order','OrderFile','Process','Category','FileFormat')").SingleAsync()); Assert.Equal(3, await sc.Database.SqlQueryRaw<int>("SELECT COUNT(*)::int AS \"Value\" FROM information_schema.tables WHERE table_schema='public' AND table_name IN ('OrderStatus','OrderStatusHasPossibleStatus','OrderStatusHistory')").SingleAsync()); }
     [Fact] public async Task PendingCustomerAndConcurrencyBoundaries_WorkOnPostgres18() { await using var oc = OC(); await using var sc = SC(); await Task.WhenAll(oc.Database.MigrateAsync(), sc.Database.MigrateAsync()); var r = Repo(oc, sc); var cat = await r.CreateCategoryAsync(new("Machining"), default); var proc = await r.CreateProcessAsync(new(cat.Id, "CNC"), default); var order = await r.CreateOrderAsync(Request(proc.Id, false), default); Assert.Single((await r.GetOrdersAsync(42, true, null, null, 1, 50, default))!.Items); var stale = order.ModifiedDate!.Value; await oc.Database.ExecuteSqlInterpolatedAsync($"UPDATE \"Order\" SET \"ModifiedDate\"={stale.AddMinutes(1)} WHERE \"ID\"={order.Id}"); oc.ChangeTracker.Clear(); Assert.Equal(UpdateResult.Conflict, await r.UpdateOrderAsync(order.Id, Request(proc.Id, false), new DateTimeOffset(stale), default)); }
+
+    [Fact]
+    public async Task LegacyRemainingAndQuantitySortValues_PreserveOrderingAndStableTies()
+    {
+        await using var oc = OC();
+        await using var sc = SC();
+        await Task.WhenAll(oc.Database.MigrateAsync(), sc.Database.MigrateAsync());
+        var repository = Repo(oc, sc);
+        var process = await CreateProcessAsync(repository);
+        var first = await repository.CreateOrderAsync(Request(process.Id) with { Quantity = 10, Manufactured = 8 }, default);
+        var second = await repository.CreateOrderAsync(Request(process.Id) with { Quantity = 4, Manufactured = 2 }, default);
+        var third = await repository.CreateOrderAsync(Request(process.Id) with { Quantity = 9, Manufactured = 1 }, default);
+
+        Assert.Equal(
+            [first.Id, second.Id, third.Id],
+            await SortedIdsAsync(repository, (OrderSortType)8));
+        Assert.Equal(
+            [third.Id, first.Id, second.Id],
+            await SortedIdsAsync(repository, (OrderSortType)9));
+        Assert.Equal(
+            [second.Id, third.Id, first.Id],
+            await SortedIdsAsync(repository, (OrderSortType)10));
+        Assert.Equal(
+            [first.Id, third.Id, second.Id],
+            await SortedIdsAsync(repository, (OrderSortType)11));
+    }
     [Fact]
     public async Task CustomerOrderBoundary_EnforcesOwnershipAndIdempotentCancellation()
     {
@@ -198,6 +224,11 @@ public sealed class OrderPostgresMigrationTests : IAsyncLifetime
         var category = await repository.CreateCategoryAsync(new("Accepted test"), default);
         return await repository.CreateProcessAsync(new(category.Id, "Accepted test"), default);
     }
+
+    private static async Task<int[]> SortedIdsAsync(OrderRepository repository, OrderSortType sort) =>
+        (await repository.GetOrdersAsync(null, false, sort, null, 1, 50, default))!.Items
+            .Select(order => order.Id)
+            .ToArray();
 
     private OrderRepository Repo(OrderDbContext o, OrderStatusDbContext s, Mock<IOrderCache>? cache = null) =>
         new(o, s, (cache ?? Cache()).Object, TimeProvider.System);
