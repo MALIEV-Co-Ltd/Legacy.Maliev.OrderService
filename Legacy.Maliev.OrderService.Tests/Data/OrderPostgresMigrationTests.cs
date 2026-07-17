@@ -14,6 +14,116 @@ public sealed class OrderPostgresMigrationTests : IAsyncLifetime
     [Fact] public async Task PendingCustomerAndConcurrencyBoundaries_WorkOnPostgres18() { await using var oc = OC(); await using var sc = SC(); await Task.WhenAll(oc.Database.MigrateAsync(), sc.Database.MigrateAsync()); var r = Repo(oc, sc); var cat = await r.CreateCategoryAsync(new("Machining"), default); var proc = await r.CreateProcessAsync(new(cat.Id, "CNC"), default); var order = await r.CreateOrderAsync(Request(proc.Id, false), default); Assert.Single((await r.GetOrdersAsync(42, true, null, null, 1, 50, default))!.Items); var stale = order.ModifiedDate!.Value; await oc.Database.ExecuteSqlInterpolatedAsync($"UPDATE \"Order\" SET \"ModifiedDate\"={stale.AddMinutes(1)} WHERE \"ID\"={order.Id}"); oc.ChangeTracker.Clear(); Assert.Equal(UpdateResult.Conflict, await r.UpdateOrderAsync(order.Id, Request(proc.Id, false), new DateTimeOffset(stale), default)); }
 
     [Fact]
+    public async Task NumericSearch_MatchesExactOrderIdAndNeverCustomerId_ForGeneralAndPendingLists()
+    {
+        await using var oc = OC();
+        await using var sc = SC();
+        await Task.WhenAll(oc.Database.MigrateAsync(), sc.Database.MigrateAsync());
+        var repository = Repo(oc, sc);
+        var process = await CreateProcessAsync(repository);
+        var customerId = 424242;
+        var order = await repository.CreateOrderAsync(
+            Request(process.Id, false) with { CustomerId = customerId },
+            default);
+
+        Assert.Null(await repository.GetOrdersAsync(null, false, null, customerId.ToString(), 1, 50, default));
+        Assert.Null(await repository.GetOrdersAsync(null, true, null, customerId.ToString(), 1, 50, default));
+        Assert.Equal(
+            [order.Id],
+            (await repository.GetOrdersAsync(null, false, null, order.Id.ToString(), 1, 50, default))!.Items
+                .Select(item => item.Id));
+        Assert.Equal(
+            [order.Id],
+            (await repository.GetOrdersAsync(null, true, null, order.Id.ToString(), 1, 50, default))!.Items
+                .Select(item => item.Id));
+    }
+
+    [Fact]
+    public async Task GeneralSearch_CoversCommentAndTrackingNumber()
+    {
+        await using var oc = OC();
+        await using var sc = SC();
+        await Task.WhenAll(oc.Database.MigrateAsync(), sc.Database.MigrateAsync());
+        var repository = Repo(oc, sc);
+        var process = await CreateProcessAsync(repository);
+        var token = Guid.NewGuid().ToString("N");
+        var commentOrder = await repository.CreateOrderAsync(
+            Request(process.Id) with { Comment = $"comment-{token}" },
+            default);
+        var trackingOrder = await repository.CreateOrderAsync(
+            Request(process.Id) with { TrackingNumber = $"tracking-{token}" },
+            default);
+
+        var commentResult = await repository.GetOrdersAsync(null, false, null, $"comment-{token}", 1, 50, default);
+        Assert.NotNull(commentResult);
+        Assert.Equal([commentOrder.Id], commentResult.Items.Select(item => item.Id));
+        Assert.Equal(
+            [trackingOrder.Id],
+            (await repository.GetOrdersAsync(null, false, null, $"tracking-{token}", 1, 50, default))!.Items
+                .Select(item => item.Id));
+    }
+
+    [Fact]
+    public async Task PendingSearch_OnlyCoversNameAndDescription()
+    {
+        await using var oc = OC();
+        await using var sc = SC();
+        await Task.WhenAll(oc.Database.MigrateAsync(), sc.Database.MigrateAsync());
+        var repository = Repo(oc, sc);
+        var process = await CreateProcessAsync(repository);
+        var token = Guid.NewGuid().ToString("N");
+        var nameOrder = await repository.CreateOrderAsync(
+            Request(process.Id, false) with { Name = $"name-{token}" },
+            default);
+        var descriptionOrder = await repository.CreateOrderAsync(
+            Request(process.Id, false) with { Description = $"description-{token}" },
+            default);
+        await repository.CreateOrderAsync(
+            Request(process.Id, false) with
+            {
+                TrackingNumber = $"tracking-{token}",
+                Comment = $"comment-{token}",
+            },
+            default);
+
+        Assert.Equal(
+            [nameOrder.Id],
+            (await repository.GetOrdersAsync(null, true, null, $"name-{token}", 1, 50, default))!.Items
+                .Select(item => item.Id));
+        Assert.Equal(
+            [descriptionOrder.Id],
+            (await repository.GetOrdersAsync(null, true, null, $"description-{token}", 1, 50, default))!.Items
+                .Select(item => item.Id));
+        Assert.Null(await repository.GetOrdersAsync(null, true, null, $"tracking-{token}", 1, 50, default));
+        Assert.Null(await repository.GetOrdersAsync(null, true, null, $"comment-{token}", 1, 50, default));
+    }
+
+    [Fact]
+    public async Task Search_IsCaseInsensitiveAcrossEndpointFields()
+    {
+        await using var oc = OC();
+        await using var sc = SC();
+        await Task.WhenAll(oc.Database.MigrateAsync(), sc.Database.MigrateAsync());
+        var repository = Repo(oc, sc);
+        var process = await CreateProcessAsync(repository);
+        var token = Guid.NewGuid().ToString("N");
+        var general = await repository.CreateOrderAsync(
+            Request(process.Id) with { Comment = $"MixedCase-{token}" },
+            default);
+        var pending = await repository.CreateOrderAsync(
+            Request(process.Id, false) with { Description = $"PendingCase-{token}" },
+            default);
+
+        var generalResult = await repository.GetOrdersAsync(null, false, null, $"mixedcase-{token}", 1, 50, default);
+        Assert.NotNull(generalResult);
+        Assert.Equal([general.Id], generalResult.Items.Select(item => item.Id));
+        Assert.Equal(
+            [pending.Id],
+            (await repository.GetOrdersAsync(null, true, null, $"pendingcase-{token}", 1, 50, default))!.Items
+                .Select(item => item.Id));
+    }
+
+    [Fact]
     public async Task LegacyRemainingAndQuantitySortValues_PreserveOrderingAndStableTies()
     {
         await using var oc = OC();
