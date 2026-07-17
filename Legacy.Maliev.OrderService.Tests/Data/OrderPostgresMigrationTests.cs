@@ -44,6 +44,162 @@ public sealed class OrderPostgresMigrationTests : IAsyncLifetime
         Assert.Equal("Cancelled", (await repository.GetLatestStatusAsync(order.Id, default))?.Name);
         Assert.Equal(2, (await repository.GetHistoryAsync(order.Id, default)).Count);
     }
-    private OrderRepository Repo(OrderDbContext o, OrderStatusDbContext s) { var c = new Mock<IOrderCache>(); c.Setup(x => x.GetAsync<OrderResponse>(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync((OrderResponse?)null); return new(o, s, c.Object, TimeProvider.System); }
+
+    [Fact]
+    public async Task AcceptedTransition_ConvergesCancellationAndRetryDoesNotDuplicateHistory()
+    {
+        await using var oc = OC();
+        await using var sc = SC(retryOnFailure: true);
+        await Task.WhenAll(oc.Database.MigrateAsync(), sc.Database.MigrateAsync());
+        var cache = Cache();
+        var repository = Repo(oc, sc, cache);
+        var process = await CreateProcessAsync(repository);
+        var order = await repository.CreateOrderAsync(Request(process.Id, false), default);
+        var created = await repository.CreateStatusAsync(new("New", "New"), default);
+        var accepted = await repository.CreateStatusAsync(new("accepted", "Accepted"), default);
+        sc.Add(new OrderStatusTransition { OrderStatusId = created.Id, PossibleStatusId = accepted.Id });
+        await sc.SaveChangesAsync();
+        Assert.Equal(UpdateResult.Updated, await repository.TransitionAsync(order.Id, created.Id, default));
+        cache.Invocations.Clear();
+
+        Assert.Equal(UpdateResult.Updated, await repository.TransitionAsync(order.Id, accepted.Id, default));
+        oc.ChangeTracker.Clear();
+        Assert.False((await repository.GetOrderAsync(order.Id, default))?.AllowCancellation);
+        Assert.Equal(2, (await repository.GetHistoryAsync(order.Id, default)).Count);
+        cache.Verify(value => value.RemoveAsync($"order:{order.Id}", It.IsAny<CancellationToken>()), Times.Once);
+
+        await oc.Database.ExecuteSqlInterpolatedAsync(
+            $"UPDATE \"Order\" SET \"AllowCancellation\"=TRUE WHERE \"ID\"={order.Id}");
+        oc.ChangeTracker.Clear();
+        cache.Invocations.Clear();
+
+        Assert.Equal(UpdateResult.Updated, await repository.TransitionAsync(order.Id, accepted.Id, default));
+        oc.ChangeTracker.Clear();
+        Assert.False((await repository.GetOrderAsync(order.Id, default))?.AllowCancellation);
+        Assert.Equal(2, (await repository.GetHistoryAsync(order.Id, default)).Count);
+        cache.Verify(value => value.RemoveAsync($"order:{order.Id}", It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task UnrelatedSameStatusTransition_PreservesInvalidTransitionContract()
+    {
+        await using var oc = OC();
+        await using var sc = SC(retryOnFailure: true);
+        await Task.WhenAll(oc.Database.MigrateAsync(), sc.Database.MigrateAsync());
+        var repository = Repo(oc, sc);
+        var process = await CreateProcessAsync(repository);
+        var order = await repository.CreateOrderAsync(Request(process.Id, false), default);
+        var created = await repository.CreateStatusAsync(new("New", "New"), default);
+
+        Assert.Equal(UpdateResult.Updated, await repository.TransitionAsync(order.Id, created.Id, default));
+        Assert.Equal(UpdateResult.InvalidTransition, await repository.TransitionAsync(order.Id, created.Id, default));
+        Assert.Single(await repository.GetHistoryAsync(order.Id, default));
+    }
+
+    [Fact]
+    public async Task AcceptedPartialFailure_IsRetryableAndCustomerCancellationFailsClosed()
+    {
+        await using var oc = OC();
+        await using var sc = SC(retryOnFailure: true);
+        await Task.WhenAll(oc.Database.MigrateAsync(), sc.Database.MigrateAsync());
+        var repository = Repo(oc, sc);
+        var process = await CreateProcessAsync(repository);
+        var order = await repository.CreateOrderAsync(Request(process.Id, false), default);
+        var created = await repository.CreateStatusAsync(new("New", "New"), default);
+        var accepted = await repository.CreateStatusAsync(new("Accepted", "Accepted"), default);
+        var cancelled = await repository.CreateStatusAsync(new("Cancelled", "Cancelled"), default);
+        sc.AddRange(
+            new OrderStatusTransition { OrderStatusId = created.Id, PossibleStatusId = accepted.Id },
+            new OrderStatusTransition { OrderStatusId = accepted.Id, PossibleStatusId = cancelled.Id });
+        await sc.SaveChangesAsync();
+        Assert.Equal(UpdateResult.Updated, await repository.TransitionAsync(order.Id, created.Id, default));
+        await oc.Database.ExecuteSqlRawAsync(
+            """
+            CREATE OR REPLACE FUNCTION fail_cancellation_disable() RETURNS trigger AS $$
+            BEGIN
+                IF OLD."AllowCancellation" AND NOT NEW."AllowCancellation" THEN
+                    RAISE EXCEPTION 'simulated order convergence failure';
+                END IF;
+                RETURN NEW;
+            END;
+            $$ LANGUAGE plpgsql;
+            CREATE TRIGGER fail_cancellation_disable
+            BEFORE UPDATE ON "Order"
+            FOR EACH ROW EXECUTE FUNCTION fail_cancellation_disable();
+            """);
+
+        try
+        {
+            Assert.Equal(UpdateResult.Conflict, await repository.TransitionAsync(order.Id, accepted.Id, default));
+            oc.ChangeTracker.Clear();
+            Assert.True((await repository.GetOrderAsync(order.Id, default))?.AllowCancellation);
+            Assert.Equal("Accepted", (await repository.GetLatestStatusAsync(order.Id, default))?.Name);
+            Assert.Equal(UpdateResult.InvalidTransition, await repository.CancelCustomerOrderAsync(42, order.Id, default));
+            Assert.Equal(2, (await repository.GetHistoryAsync(order.Id, default)).Count);
+        }
+        finally
+        {
+            await oc.Database.ExecuteSqlRawAsync(
+                """
+                DROP TRIGGER IF EXISTS fail_cancellation_disable ON "Order";
+                DROP FUNCTION IF EXISTS fail_cancellation_disable();
+                """);
+        }
+
+        Assert.Equal(UpdateResult.Updated, await repository.TransitionAsync(order.Id, accepted.Id, default));
+        oc.ChangeTracker.Clear();
+        Assert.False((await repository.GetOrderAsync(order.Id, default))?.AllowCancellation);
+        Assert.Equal(2, (await repository.GetHistoryAsync(order.Id, default)).Count);
+    }
+
+    [Fact]
+    public async Task OrderUpdate_CannotReenableCancellationAfterAcceptedAndPreservesOtherStatuses()
+    {
+        await using var oc = OC();
+        await using var sc = SC(retryOnFailure: true);
+        await Task.WhenAll(oc.Database.MigrateAsync(), sc.Database.MigrateAsync());
+        var repository = Repo(oc, sc);
+        var process = await CreateProcessAsync(repository);
+        var created = await repository.CreateStatusAsync(new("New", "New"), default);
+        var accepted = await repository.CreateStatusAsync(new("accepted", "Accepted"), default);
+        sc.Add(new OrderStatusTransition { OrderStatusId = created.Id, PossibleStatusId = accepted.Id });
+        await sc.SaveChangesAsync();
+
+        var acceptedOrder = await repository.CreateOrderAsync(Request(process.Id, false), default);
+        Assert.Equal(UpdateResult.Updated, await repository.TransitionAsync(acceptedOrder.Id, created.Id, default));
+        Assert.Equal(UpdateResult.Updated, await repository.TransitionAsync(acceptedOrder.Id, accepted.Id, default));
+        Assert.Equal(
+            UpdateResult.Updated,
+            await repository.UpdateOrderAsync(acceptedOrder.Id, Request(process.Id, false) with { AllowCancellation = true }, null, default));
+        oc.ChangeTracker.Clear();
+        Assert.False((await repository.GetOrderAsync(acceptedOrder.Id, default))?.AllowCancellation);
+
+        var newOrder = await repository.CreateOrderAsync(
+            Request(process.Id, false) with { AllowCancellation = false },
+            default);
+        Assert.Equal(UpdateResult.Updated, await repository.TransitionAsync(newOrder.Id, created.Id, default));
+        Assert.Equal(
+            UpdateResult.Updated,
+            await repository.UpdateOrderAsync(newOrder.Id, Request(process.Id, false) with { AllowCancellation = true }, null, default));
+        oc.ChangeTracker.Clear();
+        Assert.True((await repository.GetOrderAsync(newOrder.Id, default))?.AllowCancellation);
+    }
+
+    private static Mock<IOrderCache> Cache()
+    {
+        var cache = new Mock<IOrderCache>();
+        cache.Setup(value => value.GetAsync<OrderResponse>(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((OrderResponse?)null);
+        return cache;
+    }
+
+    private async Task<ProcessResponse> CreateProcessAsync(OrderRepository repository)
+    {
+        var category = await repository.CreateCategoryAsync(new("Accepted test"), default);
+        return await repository.CreateProcessAsync(new(category.Id, "Accepted test"), default);
+    }
+
+    private OrderRepository Repo(OrderDbContext o, OrderStatusDbContext s, Mock<IOrderCache>? cache = null) =>
+        new(o, s, (cache ?? Cache()).Object, TimeProvider.System);
     private static UpsertOrderRequest Request(int p, bool finished = true) => new(42, null, "Part", "Part", p, null, null, null, 10, 3, 10m, 5m, 764, 5, DateTime.UtcNow.Date.AddDays(5), finished ? DateTime.UtcNow.Date.AddDays(3) : null, null, false, true, true, null); private OrderDbContext OC() => new(new DbContextOptionsBuilder<OrderDbContext>().UseNpgsql(op.GetConnectionString()).Options); private OrderStatusDbContext SC(bool retryOnFailure = false) => new(new DbContextOptionsBuilder<OrderStatusDbContext>().UseNpgsql(sp.GetConnectionString(), options => { if (retryOnFailure) options.EnableRetryOnFailure(); }).Options);
 }

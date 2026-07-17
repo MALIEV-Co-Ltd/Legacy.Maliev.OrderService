@@ -1,9 +1,13 @@
 using System.Reflection;
 using Legacy.Maliev.OrderService.Api.Controllers;
+using Legacy.Maliev.OrderService.Application.Interfaces;
+using Legacy.Maliev.OrderService.Application.Models;
 using Maliev.Aspire.ServiceDefaults.Authorization;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Routing;
+using Moq;
 namespace Legacy.Maliev.OrderService.Tests.Controllers;
 
 public sealed class OrderControllerContractTests
@@ -32,6 +36,25 @@ public sealed class OrderControllerContractTests
     }
     [Theory][InlineData(nameof(HistoriesController.CreateOrderHistoryAcceptedStatusAsync), "{orderId:int}/accepted")][InlineData(nameof(HistoriesController.CreateOrderHistoryInProgressStatusAsync), "{orderId:int}/InProgress")][InlineData(nameof(HistoriesController.CreateOrderHistoryShippedStatusAsync), "{orderId:int}/shipped")] public void NamedStatusShortcuts_PreserveLegacyTemplates(string name, string route) => Assert.Equal(route, Assert.Single(typeof(HistoriesController).GetMethod(name)!.GetCustomAttributes<HttpPostAttribute>()).Template);
 
+    [Fact]
+    public async Task StatusIdempotency_IsCachedOnlyAfterRepositoryConvergenceSucceeds()
+    {
+        var service = new Mock<IOrderService>();
+        service.SetupSequence(value => value.TransitionAsync(42, 7, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(UpdateResult.Conflict)
+            .ReturnsAsync(UpdateResult.Updated);
+        var idempotency = new RecordingIdempotencyStore();
+        var controller = new HistoriesController(service.Object, idempotency);
+
+        var failed = await controller.CreateOrderStatusEntryAsync(42, 7, "accepted-key", default);
+        Assert.IsType<ConflictObjectResult>(failed);
+        Assert.Equal(0, idempotency.SetCount);
+
+        var retried = await controller.CreateOrderStatusEntryAsync(42, 7, "accepted-key", default);
+        Assert.Equal(StatusCodes.Status201Created, Assert.IsType<StatusCodeResult>(retried).StatusCode);
+        Assert.Equal(1, idempotency.SetCount);
+    }
+
     private static void AssertRouteAndPermission(string methodName, string route, string permission)
     {
         var method = typeof(OrdersController).GetMethod(methodName);
@@ -40,5 +63,19 @@ public sealed class OrderControllerContractTests
         var authorization = Assert.Single(method.GetCustomAttributes<RequirePermissionAttribute>());
         Assert.Equal(permission, authorization.Permission);
         Assert.False(authorization.RequireLiveCheck);
+    }
+
+    private sealed class RecordingIdempotencyStore : IIdempotencyStore
+    {
+        public int SetCount { get; private set; }
+
+        public Task<T?> GetAsync<T>(string scope, string key, CancellationToken cancellationToken) where T : class =>
+            Task.FromResult<T?>(null);
+
+        public Task SetAsync<T>(string scope, string key, T response, CancellationToken cancellationToken) where T : class
+        {
+            SetCount++;
+            return Task.CompletedTask;
+        }
     }
 }
