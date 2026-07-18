@@ -12,7 +12,7 @@
   creates use hashed Redis idempotency and mutable rows use ModifiedDate concurrency.
 - GCS rows contain bucket/object metadata only and use ADC/Workload Identity. Never copy source
   credentials, NLog DB logging, keys, signed URLs, or service-account files.
-- Use .NET 10, Scalar/OpenAPI, Npgsql, Redis, standard service defaults, and built-in logging.
+- Use .NET 10, Scalar/OpenAPI, Npgsql, Redis, `Legacy.Maliev.ServiceDefaults`, and built-in logging.
 - Existing GKE and `maliev-legacy` only; no new node pool, Cloud SQL, or paid infrastructure.
 - Validate release build, route/model/transition tests, PostgreSQL 18 for both DBs, formatting,
   dependency vulnerabilities, and gitleaks before coherent commits.
