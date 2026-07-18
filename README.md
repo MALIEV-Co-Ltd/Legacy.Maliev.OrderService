@@ -9,6 +9,10 @@ idempotency. Orders and history rows support `X-Expected-Modified-Date`; status 
 serially and must exist in `OrderStatusHasPossibleStatus`, preventing impossible or concurrent
 state changes while preserving the legacy routes.
 
+Local, CI, and image builds resolve shared infrastructure only from the public
+`Legacy.Maliev.ServiceDefaults` and `Legacy.Maliev.CompatibilityContracts` repositories. The
+compatibility namespaces, order DTOs, JSON, routes, and messaging schemas remain unchanged.
+
 ## Data boundaries
 
 - Planned `legacy-postgres-order` in namespace `maliev-legacy`, using the existing CloudNativePG
