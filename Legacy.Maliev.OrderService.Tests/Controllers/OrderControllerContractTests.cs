@@ -42,6 +42,55 @@ public sealed class OrderControllerContractTests
     }
     [Theory][InlineData(nameof(HistoriesController.CreateOrderHistoryAcceptedStatusAsync), "{orderId:int}/accepted")][InlineData(nameof(HistoriesController.CreateOrderHistoryInProgressStatusAsync), "{orderId:int}/InProgress")][InlineData(nameof(HistoriesController.CreateOrderHistoryShippedStatusAsync), "{orderId:int}/shipped")] public void NamedStatusShortcuts_PreserveLegacyTemplates(string name, string route) => Assert.Equal(route, Assert.Single(typeof(HistoriesController).GetMethod(name)!.GetCustomAttributes<HttpPostAttribute>()).Template);
 
+    [Theory]
+    [InlineData(nameof(HistoriesController.CreateOrderHistoryAcceptedStatusAsync))]
+    [InlineData(nameof(HistoriesController.CreateOrderHistoryDeclinedStatusAsync))]
+    public void QuotationDecisionShortcuts_RequireAnIdempotencyKey(string methodName)
+    {
+        var method = typeof(HistoriesController).GetMethod(methodName)!;
+        var key = Assert.Single(method.GetParameters(), parameter =>
+            parameter.GetCustomAttributes<FromHeaderAttribute>()
+                .Any(attribute => attribute.Name == "Idempotency-Key"));
+
+        Assert.Equal(typeof(string), Nullable.GetUnderlyingType(key.ParameterType) ?? key.ParameterType);
+    }
+
+    [Fact]
+    public async Task QuotationDecisionShortcut_ExactReplayDoesNotRepeatTransition()
+    {
+        var service = new Mock<IOrderService>();
+        service.Setup(value => value.TransitionAsync(42, "Accepted", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(UpdateResult.Updated);
+        var controller = WithPrincipal(new HistoriesController(service.Object, new MemoryIdempotencyStore()), "quotation-service");
+
+        var first = await controller.CreateOrderHistoryAcceptedStatusAsync(42, "quotation-7-order-42-accepted", default);
+        var replay = await controller.CreateOrderHistoryAcceptedStatusAsync(42, "quotation-7-order-42-accepted", default);
+
+        Assert.Equal(StatusCodes.Status201Created, Assert.IsType<StatusCodeResult>(first).StatusCode);
+        Assert.Equal(StatusCodes.Status201Created, Assert.IsType<StatusCodeResult>(replay).StatusCode);
+        service.Verify(
+            value => value.TransitionAsync(42, "Accepted", It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task QuotationDecisionShortcut_RejectsReusedKeyForDifferentDecision()
+    {
+        var service = new Mock<IOrderService>();
+        service.Setup(value => value.TransitionAsync(42, "Accepted", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(UpdateResult.Updated);
+        var controller = WithPrincipal(new HistoriesController(service.Object, new MemoryIdempotencyStore()), "quotation-service");
+
+        var first = await controller.CreateOrderHistoryAcceptedStatusAsync(42, "shared-key", default);
+        var conflict = await controller.CreateOrderHistoryDeclinedStatusAsync(42, "shared-key", default);
+
+        Assert.Equal(StatusCodes.Status201Created, Assert.IsType<StatusCodeResult>(first).StatusCode);
+        Assert.IsType<ConflictObjectResult>(conflict);
+        service.Verify(
+            value => value.TransitionAsync(42, "Declined", It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
     [Fact]
     public async Task StatusIdempotency_IsCachedOnlyAfterRepositoryConvergenceSucceeds()
     {
