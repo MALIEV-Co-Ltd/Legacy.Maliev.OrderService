@@ -188,9 +188,12 @@ public sealed class OrderPostgresMigrationTests : IAsyncLifetime
         await using var sc = SC(retryOnFailure: true);
         await Task.WhenAll(oc.Database.MigrateAsync(), sc.Database.MigrateAsync());
         var cache = Cache();
-        var repository = Repo(oc, sc, cache);
+        var transitionTime = new DateTimeOffset(2026, 7, 18, 23, 30, 0, TimeSpan.Zero);
+        var repository = Repo(oc, sc, cache, new FixedTimeProvider(transitionTime));
         var process = await CreateProcessAsync(repository);
-        var order = await repository.CreateOrderAsync(Request(process.Id, false), default);
+        var order = await repository.CreateOrderAsync(
+            Request(process.Id, false) with { LeadTime = 5, PromisedDate = null },
+            default);
         var created = await repository.CreateStatusAsync(new("New", "New"), default);
         var accepted = await repository.CreateStatusAsync(new("accepted", "Accepted"), default);
         sc.Add(new OrderStatusTransition { OrderStatusId = created.Id, PossibleStatusId = accepted.Id });
@@ -200,7 +203,9 @@ public sealed class OrderPostgresMigrationTests : IAsyncLifetime
 
         Assert.Equal(UpdateResult.Updated, await repository.TransitionAsync(order.Id, accepted.Id, default));
         oc.ChangeTracker.Clear();
-        Assert.False((await repository.GetOrderAsync(order.Id, default))?.AllowCancellation);
+        var acceptedOrder = await repository.GetOrderAsync(order.Id, default);
+        Assert.False(acceptedOrder?.AllowCancellation);
+        Assert.Equal(transitionTime.UtcDateTime.Date.AddDays(5), acceptedOrder?.PromisedDate);
         Assert.Equal(2, (await repository.GetHistoryAsync(order.Id, default)).Count);
         cache.Verify(value => value.RemoveAsync($"order:{order.Id}", It.IsAny<CancellationToken>()), Times.Once);
 
@@ -211,9 +216,28 @@ public sealed class OrderPostgresMigrationTests : IAsyncLifetime
 
         Assert.Equal(UpdateResult.Updated, await repository.TransitionAsync(order.Id, accepted.Id, default));
         oc.ChangeTracker.Clear();
-        Assert.False((await repository.GetOrderAsync(order.Id, default))?.AllowCancellation);
+        var retriedOrder = await repository.GetOrderAsync(order.Id, default);
+        Assert.False(retriedOrder?.AllowCancellation);
+        Assert.Equal(transitionTime.UtcDateTime.Date.AddDays(5), retriedOrder?.PromisedDate);
         Assert.Equal(2, (await repository.GetHistoryAsync(order.Id, default)).Count);
         cache.Verify(value => value.RemoveAsync($"order:{order.Id}", It.IsAny<CancellationToken>()), Times.Once);
+
+        var existingPromisedDate = new DateTime(2026, 8, 15);
+        var prePromisedOrder = await repository.CreateOrderAsync(
+            Request(process.Id, false) with { LeadTime = 5, PromisedDate = existingPromisedDate },
+            default);
+        Assert.Equal(UpdateResult.Updated, await repository.TransitionAsync(prePromisedOrder.Id, created.Id, default));
+        Assert.Equal(UpdateResult.Updated, await repository.TransitionAsync(prePromisedOrder.Id, accepted.Id, default));
+        oc.ChangeTracker.Clear();
+        Assert.Equal(existingPromisedDate, (await repository.GetOrderAsync(prePromisedOrder.Id, default))?.PromisedDate);
+
+        var noLeadTimeOrder = await repository.CreateOrderAsync(
+            Request(process.Id, false) with { LeadTime = null, PromisedDate = null },
+            default);
+        Assert.Equal(UpdateResult.Updated, await repository.TransitionAsync(noLeadTimeOrder.Id, created.Id, default));
+        Assert.Equal(UpdateResult.Updated, await repository.TransitionAsync(noLeadTimeOrder.Id, accepted.Id, default));
+        oc.ChangeTracker.Clear();
+        Assert.Null((await repository.GetOrderAsync(noLeadTimeOrder.Id, default))?.PromisedDate);
     }
 
     [Fact]
@@ -340,7 +364,16 @@ public sealed class OrderPostgresMigrationTests : IAsyncLifetime
             .Select(order => order.Id)
             .ToArray();
 
-    private OrderRepository Repo(OrderDbContext o, OrderStatusDbContext s, Mock<IOrderCache>? cache = null) =>
-        new(o, s, (cache ?? Cache()).Object, TimeProvider.System);
+    private OrderRepository Repo(
+        OrderDbContext o,
+        OrderStatusDbContext s,
+        Mock<IOrderCache>? cache = null,
+        TimeProvider? clock = null) =>
+        new(o, s, (cache ?? Cache()).Object, clock ?? TimeProvider.System);
+
+    private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => utcNow;
+    }
     private static UpsertOrderRequest Request(int p, bool finished = true) => new(42, null, "Part", "Part", p, null, null, null, 10, 3, 10m, 5m, 764, 5, DateTime.UtcNow.Date.AddDays(5), finished ? DateTime.UtcNow.Date.AddDays(3) : null, null, false, true, true, null); private OrderDbContext OC() => new(new DbContextOptionsBuilder<OrderDbContext>().UseNpgsql(op.GetConnectionString()).Options); private OrderStatusDbContext SC(bool retryOnFailure = false) => new(new DbContextOptionsBuilder<OrderStatusDbContext>().UseNpgsql(sp.GetConnectionString(), options => { if (retryOnFailure) options.EnableRetryOnFailure(); }).Options);
 }
