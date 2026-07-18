@@ -163,19 +163,28 @@ public sealed class OrderRepository(OrderDbContext orders, OrderStatusDbContext 
             return transition;
         }
 
-        return await ConvergeAcceptedCancellationAsync(orderId, c);
+        return await ConvergeAcceptedOrderAsync(orderId, c);
     }
     public Task<bool> DeleteHistoryAsync(int id, CancellationToken c) => Delete(statuses.History, id, c); public async Task<OrderStatusResponse?> GetLatestStatusAsync(int orderId, CancellationToken c) => await statuses.History.AsNoTracking().Where(x => x.OrderId == orderId).OrderByDescending(x => x.Id).Select(x => new OrderStatusResponse(x.OrderStatus!.Id, x.OrderStatus.Name, x.OrderStatus.Description, x.CreatedDate, x.ModifiedDate)).FirstOrDefaultAsync(c); public async Task<IReadOnlyList<OrderStatusHistoryResponse>> GetHistoryAsync(int orderId, CancellationToken c) => await statuses.History.AsNoTracking().Where(x => x.OrderId == orderId).OrderBy(x => x.CreatedDate).Select(x => new OrderStatusHistoryResponse(x.Id, x.OrderId, x.OrderStatusId, x.OrderStatus!.Name, x.OrderStatus.Description, x.CreatedDate, x.ModifiedDate)).ToListAsync(c); public async Task<UpdateResult> UpdateHistoryAsync(int id, UpsertOrderStatusHistoryRequest r, DateTimeOffset? expected, CancellationToken c) { var e = await statuses.History.FindAsync([id], c); if (e is null) return UpdateResult.NotFound; if (expected is not null) statuses.Entry(e).Property(x => x.ModifiedDate).OriginalValue = expected.Value.UtcDateTime; e.OrderId = r.OrderId; e.OrderStatusId = r.OrderStatusId; e.ModifiedDate = Now(); try { await statuses.SaveChangesAsync(c); return UpdateResult.Updated; } catch (DbUpdateConcurrencyException) { return UpdateResult.Conflict; } }
-    private async Task<UpdateResult> ConvergeAcceptedCancellationAsync(int orderId, CancellationToken c)
+    private async Task<UpdateResult> ConvergeAcceptedOrderAsync(int orderId, CancellationToken c)
     {
         try
         {
             var modifiedDate = Now();
+            var transitionDate = modifiedDate.Date;
             var changed = await orders.Orders
-                .Where(x => x.Id == orderId && x.AllowCancellation)
+                .Where(x =>
+                    x.Id == orderId
+                    && (x.AllowCancellation || (x.PromisedDate == null && x.LeadTime != null)))
                 .ExecuteUpdateAsync(
                     setters => setters
                         .SetProperty(x => x.AllowCancellation, false)
+                        .SetProperty(
+                            x => x.PromisedDate,
+                            x => x.PromisedDate
+                                ?? (x.LeadTime == null
+                                    ? null
+                                    : transitionDate.AddDays(x.LeadTime.Value)))
                         .SetProperty(x => x.ModifiedDate, modifiedDate),
                     c);
             if (changed == 1)
@@ -186,6 +195,12 @@ public sealed class OrderRepository(OrderDbContext orders, OrderStatusDbContext 
                 {
                     tracked.Property(x => x.AllowCancellation).CurrentValue = false;
                     tracked.Property(x => x.AllowCancellation).OriginalValue = false;
+                    if (tracked.Entity.PromisedDate is null && tracked.Entity.LeadTime is not null)
+                    {
+                        var promisedDate = transitionDate.AddDays(tracked.Entity.LeadTime.Value);
+                        tracked.Property(x => x.PromisedDate).CurrentValue = promisedDate;
+                        tracked.Property(x => x.PromisedDate).OriginalValue = promisedDate;
+                    }
                     tracked.Property(x => x.ModifiedDate).CurrentValue = modifiedDate;
                     tracked.Property(x => x.ModifiedDate).OriginalValue = modifiedDate;
                 }
