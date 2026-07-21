@@ -3,6 +3,7 @@ using System;
 using Legacy.Maliev.OrderService.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Legacy.Maliev.OrderService.Data.Migrations.OrderStatus
 {
     [DbContext(typeof(OrderStatusDbContext))]
-    partial class OrderStatusDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260721030107_FixTimestampColumnType")]
+    partial class FixTimestampColumnType
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
