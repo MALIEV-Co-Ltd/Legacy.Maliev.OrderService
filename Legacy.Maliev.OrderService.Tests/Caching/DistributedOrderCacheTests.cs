@@ -7,6 +7,7 @@ using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Moq;
 namespace Legacy.Maliev.OrderService.Tests.Caching;
 
 public sealed class DistributedOrderCacheTests
@@ -44,5 +45,47 @@ public sealed class DistributedOrderCacheTests
         var legacyV2Hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes("order-status:employee-a\nexternal-key")));
         Assert.Null(await distributed.GetAsync($"idempotency:v2:{legacyV2Hash}"));
         Assert.Null(await distributed.GetAsync("idempotency:v3:order-status:employee-a:external-key"));
+    }
+
+    [Fact]
+    public async Task GetAsync_does_not_swallow_cancellation()
+    {
+        var cancellationToken = new CancellationToken(canceled: true);
+        var distributed = new Mock<IDistributedCache>();
+        distributed.Setup(value => value.GetAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new OperationCanceledException(cancellationToken));
+        var cache = new DistributedOrderCache(distributed.Object, NullLogger<DistributedOrderCache>.Instance);
+
+        await Assert.ThrowsAsync<OperationCanceledException>(
+            () => cache.GetAsync<OrderStatusResponse>("key", cancellationToken));
+    }
+
+    [Fact]
+    public async Task SetAsync_does_not_swallow_cancellation()
+    {
+        var cancellationToken = new CancellationToken(canceled: true);
+        var distributed = new Mock<IDistributedCache>();
+        distributed.Setup(value => value.SetAsync(
+                It.IsAny<string>(),
+                It.IsAny<byte[]>(),
+                It.IsAny<DistributedCacheEntryOptions>(),
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new OperationCanceledException(cancellationToken));
+        var cache = new DistributedOrderCache(distributed.Object, NullLogger<DistributedOrderCache>.Instance);
+
+        await Assert.ThrowsAsync<OperationCanceledException>(
+            () => cache.SetAsync("key", new OrderStatusResponse(1, "New", null, null, null), TimeSpan.FromMinutes(1), cancellationToken));
+    }
+
+    [Fact]
+    public async Task RemoveAsync_does_not_swallow_cancellation()
+    {
+        var cancellationToken = new CancellationToken(canceled: true);
+        var distributed = new Mock<IDistributedCache>();
+        distributed.Setup(value => value.RemoveAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new OperationCanceledException(cancellationToken));
+        var cache = new DistributedOrderCache(distributed.Object, NullLogger<DistributedOrderCache>.Instance);
+
+        await Assert.ThrowsAsync<OperationCanceledException>(() => cache.RemoveAsync("key", cancellationToken));
     }
 }
