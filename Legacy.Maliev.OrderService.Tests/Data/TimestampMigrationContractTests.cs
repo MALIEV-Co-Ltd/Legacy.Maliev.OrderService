@@ -27,6 +27,21 @@ public sealed class TimestampMigrationContractTests
         }
     }
 
+    [Fact]
+    public void OrderTimestampMigration_RecreatesOnlyTheComputedTurnaroundColumn()
+    {
+        var source = File.ReadAllText(FindRepositoryFile(
+            "Legacy.Maliev.OrderService.Data/Migrations/Order/20260721030103_FixTimestampColumnType.cs"));
+
+        Assert.Equal(2, Regex.Matches(source, "migrationBuilder.DropColumn\\(").Count);
+        Assert.Equal(4, Regex.Matches(source, "name: \"Turnaround\"[,\\r\\n]").Count);
+        Assert.Equal(2, Regex.Matches(source, "computedColumnSql:").Count);
+        Assert.DoesNotContain("name: \"CreatedDate\"", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("name: \"ModifiedDate\"", source, StringComparison.Ordinal);
+        Assert.Contains("computedColumnSql: \"(\\\"FinishedDate\\\" - \\\"CreatedDate\\\"::date)\"", source, StringComparison.Ordinal);
+        Assert.Contains("computedColumnSql: \"(\\\"FinishedDate\\\" - (\\\"CreatedDate\\\" AT TIME ZONE 'UTC')::date)\"", source, StringComparison.Ordinal);
+    }
+
     private static string FindRepositoryFile(string relativePath, [CallerFilePath] string sourceFile = "")
     {
         foreach (var start in new[] { new DirectoryInfo(Path.GetDirectoryName(sourceFile)!), new DirectoryInfo(Directory.GetCurrentDirectory()), new DirectoryInfo(AppContext.BaseDirectory) })
