@@ -148,6 +148,66 @@ public sealed class OrderPostgresMigrationTests : IAsyncLifetime
             [first.Id, third.Id, second.Id],
             await SortedIdsAsync(repository, (OrderSortType)11));
     }
+
+    [Fact]
+    public async Task ModifiedDateDescending_BoundedPage_PutsNullLastAndBreaksTiesByDescendingId()
+    {
+        await using var oc = OC();
+        await using var sc = SC();
+        await Task.WhenAll(oc.Database.MigrateAsync(), sc.Database.MigrateAsync());
+        var repository = Repo(oc, sc);
+        var process = await CreateProcessAsync(repository);
+        var older = await repository.CreateOrderAsync(Request(process.Id), default);
+        var newestLowerId = await repository.CreateOrderAsync(Request(process.Id), default);
+        var newestHigherId = await repository.CreateOrderAsync(Request(process.Id), default);
+        var neverModified = await repository.CreateOrderAsync(Request(process.Id), default);
+        var olderDate = new DateTime(2026, 7, 1, 9, 0, 0);
+        var newestDate = new DateTime(2026, 7, 2, 9, 0, 0);
+        await oc.Orders.Where(order => order.Id == older.Id)
+            .ExecuteUpdateAsync(setters => setters.SetProperty(order => order.ModifiedDate, olderDate));
+        await oc.Orders.Where(order => order.Id == newestLowerId.Id || order.Id == newestHigherId.Id)
+            .ExecuteUpdateAsync(setters => setters.SetProperty(order => order.ModifiedDate, newestDate));
+        await oc.Orders.Where(order => order.Id == neverModified.Id)
+            .ExecuteUpdateAsync(setters => setters.SetProperty(order => order.ModifiedDate, (DateTime?)null));
+
+        var page = await repository.GetOrdersAsync(
+            42,
+            false,
+            OrderSortType.OrderModifiedDate_Descending,
+            null,
+            1,
+            3,
+            default);
+
+        Assert.NotNull(page);
+        Assert.Equal(
+            [newestHigherId.Id, newestLowerId.Id, older.Id],
+            page.Items.Select(order => order.Id));
+    }
+
+    [Fact]
+    public async Task CreatedDateDescending_BreaksTiesByDescendingId()
+    {
+        await using var oc = OC();
+        await using var sc = SC();
+        await Task.WhenAll(oc.Database.MigrateAsync(), sc.Database.MigrateAsync());
+        var repository = Repo(oc, sc);
+        var process = await CreateProcessAsync(repository);
+        var newestLowerId = await repository.CreateOrderAsync(Request(process.Id), default);
+        var newestHigherId = await repository.CreateOrderAsync(Request(process.Id), default);
+        var older = await repository.CreateOrderAsync(Request(process.Id), default);
+        var olderDate = new DateTime(2026, 7, 1, 9, 0, 0);
+        var newestDate = new DateTime(2026, 7, 2, 9, 0, 0);
+        await oc.Orders.Where(order => order.Id == newestLowerId.Id || order.Id == newestHigherId.Id)
+            .ExecuteUpdateAsync(setters => setters.SetProperty(order => order.CreatedDate, newestDate));
+        await oc.Orders.Where(order => order.Id == older.Id)
+            .ExecuteUpdateAsync(setters => setters.SetProperty(order => order.CreatedDate, olderDate));
+
+        Assert.Equal(
+            [newestHigherId.Id, newestLowerId.Id, older.Id],
+            await SortedIdsAsync(repository, OrderSortType.OrderCreatedDate_Descending));
+    }
+
     [Fact]
     public async Task CustomerOrderBoundary_EnforcesOwnershipAndIdempotentCancellation()
     {
