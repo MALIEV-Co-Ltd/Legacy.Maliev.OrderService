@@ -186,7 +186,7 @@ public sealed class OrderPostgresMigrationTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task CreatedDateDescending_BreaksTiesByDescendingId()
+    public async Task CreatedDateDescending_BoundedPage_PutsNullLastAndBreaksTiesByDescendingId()
     {
         await using var oc = OC();
         await using var sc = SC();
@@ -196,16 +196,30 @@ public sealed class OrderPostgresMigrationTests : IAsyncLifetime
         var newestLowerId = await repository.CreateOrderAsync(Request(process.Id), default);
         var newestHigherId = await repository.CreateOrderAsync(Request(process.Id), default);
         var older = await repository.CreateOrderAsync(Request(process.Id), default);
+        var neverCreatedLowerId = await repository.CreateOrderAsync(Request(process.Id), default);
+        var neverCreatedHigherId = await repository.CreateOrderAsync(Request(process.Id), default);
         var olderDate = new DateTime(2026, 7, 1, 9, 0, 0);
         var newestDate = new DateTime(2026, 7, 2, 9, 0, 0);
         await oc.Orders.Where(order => order.Id == newestLowerId.Id || order.Id == newestHigherId.Id)
             .ExecuteUpdateAsync(setters => setters.SetProperty(order => order.CreatedDate, newestDate));
         await oc.Orders.Where(order => order.Id == older.Id)
             .ExecuteUpdateAsync(setters => setters.SetProperty(order => order.CreatedDate, olderDate));
+        await oc.Orders.Where(order => order.Id == neverCreatedLowerId.Id || order.Id == neverCreatedHigherId.Id)
+            .ExecuteUpdateAsync(setters => setters.SetProperty(order => order.CreatedDate, (DateTime?)null));
 
+        var page = await repository.GetOrdersAsync(
+            42,
+            false,
+            OrderSortType.OrderCreatedDate_Descending,
+            null,
+            1,
+            3,
+            default);
+
+        Assert.NotNull(page);
         Assert.Equal(
             [newestHigherId.Id, newestLowerId.Id, older.Id],
-            await SortedIdsAsync(repository, OrderSortType.OrderCreatedDate_Descending));
+            page.Items.Select(order => order.Id));
     }
 
     [Fact]
