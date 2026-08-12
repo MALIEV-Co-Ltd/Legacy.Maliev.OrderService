@@ -42,9 +42,9 @@ public sealed class OrderRepository(OrderDbContext orders, OrderStatusDbContext 
         {
             OrderSortType.OrderId_Descending => q.OrderByDescending(x => x.Id),
             OrderSortType.OrderCreatedDate_Ascending => q.OrderBy(x => x.CreatedDate).ThenBy(x => x.Id),
-            OrderSortType.OrderCreatedDate_Descending => q.OrderByDescending(x => x.CreatedDate).ThenBy(x => x.Id),
+            OrderSortType.OrderCreatedDate_Descending => q.OrderByDescending(x => x.CreatedDate).ThenByDescending(x => x.Id),
             OrderSortType.OrderModifiedDate_Ascending => q.OrderBy(x => x.ModifiedDate).ThenBy(x => x.Id),
-            OrderSortType.OrderModifiedDate_Descending => q.OrderByDescending(x => x.ModifiedDate).ThenBy(x => x.Id),
+            OrderSortType.OrderModifiedDate_Descending => q.OrderBy(x => x.ModifiedDate == null).ThenByDescending(x => x.ModifiedDate).ThenByDescending(x => x.Id),
             OrderSortType.OrderRemaining_Ascending => q.OrderBy(x => x.Remaining).ThenBy(x => x.Id),
             OrderSortType.OrderRemaining_Descending => q.OrderByDescending(x => x.Remaining).ThenBy(x => x.Id),
             OrderSortType.OrderQuantity_Ascending => q.OrderBy(x => x.Quantity).ThenBy(x => x.Id),
