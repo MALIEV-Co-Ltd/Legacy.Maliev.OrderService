@@ -1,7 +1,29 @@
+using System.ComponentModel.DataAnnotations;
 namespace Legacy.Maliev.OrderService.Application.Models;
 
 public sealed record OrderResponse(int Id, int? CustomerId, int? EmployeeId, string? Name, string? Description, int ProcessId, int? MaterialId, int? SurfaceFinishId, int? ColorId, int Quantity, int Manufactured, int? Remaining, decimal? UnitPrice, decimal? DiscountPercent, decimal? Subtotal, int? CurrencyId, int? LeadTime, DateTime? PromisedDate, DateTime? FinishedDate, int? Turnaround, string? Comment, bool AllowSocialMedia, bool AllowCancellation, bool AllowPayment, string? TrackingNumber, DateTime? CreatedDate, DateTime? ModifiedDate);
-public sealed record UpsertOrderRequest(int? CustomerId, int? EmployeeId, string? Name, string? Description, int ProcessId, int? MaterialId, int? SurfaceFinishId, int? ColorId, int Quantity, int Manufactured, decimal? UnitPrice, decimal? DiscountPercent, int? CurrencyId, int? LeadTime, DateTime? PromisedDate, DateTime? FinishedDate, string? Comment, bool AllowSocialMedia, bool AllowCancellation, bool AllowPayment, string? TrackingNumber);
+public sealed record UpsertOrderRequest(
+    int? CustomerId,
+    int? EmployeeId,
+    [property: StringLength(100)] string? Name,
+    [property: StringLength(250)] string? Description,
+    int ProcessId,
+    int? MaterialId,
+    int? SurfaceFinishId,
+    int? ColorId,
+    int Quantity,
+    int Manufactured,
+    decimal? UnitPrice,
+    decimal? DiscountPercent,
+    int? CurrencyId,
+    int? LeadTime,
+    DateTime? PromisedDate,
+    DateTime? FinishedDate,
+    string? Comment,
+    bool AllowSocialMedia,
+    bool AllowCancellation,
+    bool AllowPayment,
+    string? TrackingNumber);
 public sealed record ProcessResponse(int Id, int CategoryId, string Name, DateTime? CreatedDate, DateTime? ModifiedDate); public sealed record UpsertProcessRequest(int CategoryId, string Name);
 public sealed record CategoryResponse(int Id, string? Name, DateTime? CreatedDate, DateTime? ModifiedDate); public sealed record UpsertCategoryRequest(string? Name);
 public sealed record FileFormatResponse(int Id, string? Name, string? Extension, DateTime? CreatedDate, DateTime? ModifiedDate); public sealed record UpsertFileFormatRequest(string? Name, string? Extension);

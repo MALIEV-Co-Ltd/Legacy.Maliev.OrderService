@@ -224,6 +224,42 @@ public sealed class OrderControllerContractTests
         Assert.Equal(2, Assert.IsType<OrderResponse>(second.Value).Id);
     }
 
+    [Theory]
+    [InlineData(101, 1)]
+    [InlineData(1, 251)]
+    public async Task CreateOrder_RejectsOversizedTextBeforeRepository(int nameLength, int descriptionLength)
+    {
+        var service = new Mock<IOrderService>(MockBehavior.Strict);
+        var request = Request(new string('N', nameLength)) with
+        {
+            Description = new string('D', descriptionLength),
+        };
+        var controller = new OrdersController(service.Object, new MemoryIdempotencyStore());
+
+        var result = await controller.CreateOrderAsync(request, null, default);
+
+        Assert.Equal(StatusCodes.Status400BadRequest, Assert.IsType<BadRequestObjectResult>(result).StatusCode);
+        service.VerifyNoOtherCalls();
+    }
+
+    [Theory]
+    [InlineData(101, 1)]
+    [InlineData(1, 251)]
+    public async Task UpdateOrder_RejectsOversizedTextBeforeRepository(int nameLength, int descriptionLength)
+    {
+        var service = new Mock<IOrderService>(MockBehavior.Strict);
+        var request = Request(new string('N', nameLength)) with
+        {
+            Description = new string('D', descriptionLength),
+        };
+        var controller = new OrdersController(service.Object, new MemoryIdempotencyStore());
+
+        var result = await controller.UpdateOrderAsync(42, request, null, default);
+
+        Assert.Equal(StatusCodes.Status400BadRequest, Assert.IsType<BadRequestObjectResult>(result).StatusCode);
+        service.VerifyNoOtherCalls();
+    }
+
     [Fact]
     public async Task CreateOrderIdempotency_SerializedEnvelopeRoundTrips()
     {

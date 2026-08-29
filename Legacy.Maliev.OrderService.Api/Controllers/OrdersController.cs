@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using Legacy.Maliev.OrderService.Api.Authorization;
 using Legacy.Maliev.OrderService.Application.Interfaces;
 using Legacy.Maliev.OrderService.Application.Models;
@@ -12,6 +13,8 @@ public sealed class OrdersController(IOrderService s, IIdempotencyStore idem) : 
     [HttpPost, RequirePermission(OrderPermissions.Create, IsCritical = true)]
     public async Task<IActionResult> CreateOrderAsync(UpsertOrderRequest i, [FromHeader(Name = "Idempotency-Key")] string? key, CancellationToken c)
     {
+        if (InvalidRequest(i) is { } invalid) return invalid;
+
         try
         {
             var lookup = await IdempotentRequests.LookupAsync<UpsertOrderRequest, OrderResponse>(idem, User, "order", key, i, c);
@@ -44,5 +47,30 @@ public sealed class OrdersController(IOrderService s, IIdempotencyStore idem) : 
     [HttpGet("customers/{customerId:int}"), RequirePermission(OrderPermissions.CustomerRead, ResourcePathTemplate = "/customers/{customerId}/orders")] public async Task<ActionResult<PaginatedResponse<OrderResponse>>> GetCustomerOrdersAsync(int customerId, [FromQuery] OrderSortType? sort, [FromQuery] string? search, [FromQuery] int? index, [FromQuery] int? size, CancellationToken c) { var v = await s.GetOrdersAsync(customerId, false, sort, search, index ?? 1, size ?? 50, c); return v is null ? NotFound() : v; }
     [HttpGet("customers/{customerId:int}/{id:int}"), RequirePermission(OrderPermissions.CustomerRead, ResourcePathTemplate = "/customers/{customerId}/orders/{id}")] public async Task<ActionResult<CustomerOrderDetails>> GetCustomerOrderAsync(int customerId, int id, CancellationToken c) { var v = await s.GetCustomerOrderAsync(customerId, id, c); return v is null ? NotFound() : v; }
     [HttpPost("customers/{customerId:int}/{id:int}/cancel"), RequirePermission(OrderPermissions.CustomerCancel, ResourcePathTemplate = "/customers/{customerId}/orders/{id}", IsCritical = true)] public async Task<IActionResult> CancelCustomerOrderAsync(int customerId, int id, CancellationToken c) => (await s.CancelCustomerOrderAsync(customerId, id, c)) switch { UpdateResult.Updated => NoContent(), UpdateResult.InvalidTransition => Conflict("Order cannot be cancelled in its current state."), UpdateResult.Conflict => Conflict("Order was modified by another request."), _ => NotFound() };
-    [HttpPut("{id:int}"), RequirePermission(OrderPermissions.Update, ResourcePathTemplate = "/orders/{id}", IsCritical = true)] public async Task<IActionResult> UpdateOrderAsync(int id, UpsertOrderRequest i, [FromHeader(Name = "X-Expected-Modified-Date")] DateTimeOffset? expected, CancellationToken c) => (await s.UpdateOrderAsync(id, i, expected, c)) switch { UpdateResult.Updated => NoContent(), UpdateResult.Conflict => Conflict("Order was modified by another request."), _ => NotFound() };
+    [HttpPut("{id:int}"), RequirePermission(OrderPermissions.Update, ResourcePathTemplate = "/orders/{id}", IsCritical = true)]
+    public async Task<IActionResult> UpdateOrderAsync(int id, UpsertOrderRequest i, [FromHeader(Name = "X-Expected-Modified-Date")] DateTimeOffset? expected, CancellationToken c)
+    {
+        if (InvalidRequest(i) is { } invalid) return invalid;
+
+        return (await s.UpdateOrderAsync(id, i, expected, c)) switch
+        {
+            UpdateResult.Updated => NoContent(),
+            UpdateResult.Conflict => Conflict("Order was modified by another request."),
+            _ => NotFound(),
+        };
+    }
+
+    private static BadRequestObjectResult? InvalidRequest(UpsertOrderRequest request)
+    {
+        var results = new List<ValidationResult>();
+        if (Validator.TryValidateObject(request, new ValidationContext(request), results, true)) return null;
+
+        var errors = results
+            .SelectMany(result => result.MemberNames.DefaultIfEmpty(string.Empty), (result, member) => new { member, result.ErrorMessage })
+            .GroupBy(value => value.member)
+            .ToDictionary(
+                group => group.Key,
+                group => group.Select(value => value.ErrorMessage ?? "The supplied value is invalid.").ToArray());
+        return new BadRequestObjectResult(new ValidationProblemDetails(errors));
+    }
 }
