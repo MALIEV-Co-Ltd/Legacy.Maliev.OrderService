@@ -14,6 +14,108 @@ public sealed class OrderPostgresMigrationTests : IAsyncLifetime
     [Fact] public async Task PendingCustomerAndConcurrencyBoundaries_WorkOnPostgres18() { await using var oc = OC(); await using var sc = SC(); await Task.WhenAll(oc.Database.MigrateAsync(), sc.Database.MigrateAsync()); var r = Repo(oc, sc); var cat = await r.CreateCategoryAsync(new("Machining"), default); var proc = await r.CreateProcessAsync(new(cat.Id, "CNC"), default); var order = await r.CreateOrderAsync(Request(proc.Id, false), default); Assert.Single((await r.GetOrdersAsync(42, true, null, null, 1, 50, default))!.Items); var stale = order.ModifiedDate!.Value; await oc.Orders.Where(x => x.Id == order.Id).ExecuteUpdateAsync(setters => setters.SetProperty(x => x.ModifiedDate, stale.AddMinutes(1))); oc.ChangeTracker.Clear(); Assert.Equal(UpdateResult.Conflict, await r.UpdateOrderAsync(order.Id, Request(proc.Id, false), new DateTimeOffset(stale), default)); }
 
     [Fact]
+    public async Task ConcurrentExactOrderFileLink_ReturnsOneDurableRow()
+    {
+        await using var firstOrders = OC();
+        await using var statuses = SC();
+        await Task.WhenAll(firstOrders.Database.MigrateAsync(), statuses.Database.MigrateAsync());
+        var firstRepository = Repo(firstOrders, statuses);
+        var process = await CreateProcessAsync(firstRepository);
+        var order = await firstRepository.CreateOrderAsync(Request(process.Id), default);
+        await using var secondOrders = OC();
+        await using var secondStatuses = SC();
+        var secondRepository = Repo(secondOrders, secondStatuses);
+
+        var results = await Task.WhenAll(
+            firstRepository.CreateFileAsync(order.Id, "maliev-quotation-requests", "instant-quotation/part.stl", default),
+            secondRepository.CreateFileAsync(order.Id, "maliev-quotation-requests", "instant-quotation/part.stl", default));
+
+        Assert.All(results, result => Assert.NotNull(result));
+        Assert.Equal(results[0]!.Id, results[1]!.Id);
+        firstOrders.ChangeTracker.Clear();
+        Assert.Single(await firstOrders.Files.AsNoTracking()
+            .Where(file => file.OrderId == order.Id)
+            .ToListAsync());
+    }
+
+    [Fact]
+    public async Task LegacyDuplicateOrderFileLinks_ArePreservedAndReplayReturnsLowestId()
+    {
+        await using var firstOrders = OC();
+        await using var statuses = SC();
+        await Task.WhenAll(firstOrders.Database.MigrateAsync(), statuses.Database.MigrateAsync());
+        var firstRepository = Repo(firstOrders, statuses);
+        var process = await CreateProcessAsync(firstRepository);
+        var order = await firstRepository.CreateOrderAsync(Request(process.Id), default);
+        var created = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
+        firstOrders.Files.AddRange(
+            new OrderFile
+            {
+                OrderId = order.Id,
+                Bucket = "maliev-quotation-requests",
+                ObjectName = "instant-quotation/legacy-duplicate.stl",
+                CreatedDate = created,
+                ModifiedDate = created,
+            },
+            new OrderFile
+            {
+                OrderId = order.Id,
+                Bucket = "maliev-quotation-requests",
+                ObjectName = "instant-quotation/legacy-duplicate.stl",
+                CreatedDate = created.AddSeconds(1),
+                ModifiedDate = created.AddSeconds(1),
+            });
+        await firstOrders.SaveChangesAsync();
+        var expectedId = await firstOrders.Files
+            .Where(file => file.OrderId == order.Id)
+            .MinAsync(file => file.Id);
+
+        await using var secondOrders = OC();
+        await using var secondStatuses = SC();
+        var secondRepository = Repo(secondOrders, secondStatuses);
+        var results = await Task.WhenAll(
+            firstRepository.CreateFileAsync(
+                order.Id,
+                " maliev-quotation-requests ",
+                " instant-quotation/legacy-duplicate.stl ",
+                default),
+            secondRepository.CreateFileAsync(
+                order.Id,
+                "maliev-quotation-requests",
+                "instant-quotation/legacy-duplicate.stl",
+                default));
+
+        Assert.All(results, result => Assert.Equal(expectedId, result?.Id));
+        firstOrders.ChangeTracker.Clear();
+        Assert.Equal(2, await firstOrders.Files.AsNoTracking()
+            .CountAsync(file => file.OrderId == order.Id));
+    }
+
+    [Fact]
+    public async Task ConcurrentExactOrderOperation_ReturnsOneDurableOrder()
+    {
+        await using var firstOrders = OC();
+        await using var statuses = SC();
+        await Task.WhenAll(firstOrders.Database.MigrateAsync(), statuses.Database.MigrateAsync());
+        var firstRepository = Repo(firstOrders, statuses);
+        var process = await CreateProcessAsync(firstRepository);
+        await using var secondOrders = OC();
+        await using var secondStatuses = SC();
+        var secondRepository = Repo(secondOrders, secondStatuses);
+        var request = Request(process.Id) with { OperationKey = $"instant-quotation-{Guid.NewGuid():N}" };
+
+        var results = await Task.WhenAll(
+            firstRepository.CreateOrderAsync(request, default),
+            secondRepository.CreateOrderAsync(request, default));
+
+        Assert.Equal(results[0].Id, results[1].Id);
+        firstOrders.ChangeTracker.Clear();
+        Assert.Single(await firstOrders.Orders.AsNoTracking()
+            .Where(order => order.OperationKey == request.OperationKey)
+            .ToListAsync());
+    }
+
+    [Fact]
     public async Task NumericSearch_MatchesExactOrderIdAndNeverCustomerId_ForGeneralAndPendingLists()
     {
         await using var oc = OC();
@@ -315,7 +417,7 @@ public sealed class OrderPostgresMigrationTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task UnrelatedSameStatusTransition_PreservesInvalidTransitionContract()
+    public async Task SameStatusTransition_IsDurablyIdempotentWithoutDuplicatingHistory()
     {
         await using var oc = OC();
         await using var sc = SC(retryOnFailure: true);
@@ -326,8 +428,28 @@ public sealed class OrderPostgresMigrationTests : IAsyncLifetime
         var created = await repository.CreateStatusAsync(new("New", "New"), default);
 
         Assert.Equal(UpdateResult.Updated, await repository.TransitionAsync(order.Id, created.Id, default));
-        Assert.Equal(UpdateResult.InvalidTransition, await repository.TransitionAsync(order.Id, created.Id, default));
+        Assert.Equal(UpdateResult.Updated, await repository.TransitionAsync(order.Id, created.Id, default));
         Assert.Single(await repository.GetHistoryAsync(order.Id, default));
+    }
+
+    [Fact]
+    public async Task DeleteOrder_RemovesFileAndStatusGraphAndIsReplaySafe()
+    {
+        await using var oc = OC();
+        await using var sc = SC();
+        await Task.WhenAll(oc.Database.MigrateAsync(), sc.Database.MigrateAsync());
+        var repository = Repo(oc, sc);
+        var process = await CreateProcessAsync(repository);
+        var order = await repository.CreateOrderAsync(Request(process.Id), default);
+        await repository.CreateFileAsync(order.Id, "legacy-orders", "orders/part.stl", default);
+        var created = await repository.CreateStatusAsync(new("New", "New"), default);
+        Assert.Equal(UpdateResult.Updated, await repository.TransitionAsync(order.Id, created.Id, default));
+
+        Assert.True(await repository.DeleteOrderAsync(order.Id, default));
+        Assert.False(await repository.DeleteOrderAsync(order.Id, default));
+        Assert.Null(await repository.GetOrderAsync(order.Id, default));
+        Assert.Empty(await repository.GetFilesAsync(order.Id, default));
+        Assert.Empty(await repository.GetHistoryAsync(order.Id, default));
     }
 
     [Fact]

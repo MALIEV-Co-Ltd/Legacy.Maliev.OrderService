@@ -27,6 +27,7 @@ public sealed class Order
     public bool AllowCancellation { get; set; }
     public bool AllowPayment { get; set; }
     public string? TrackingNumber { get; set; }
+    public string? OperationKey { get; set; }
     public DateTime? CreatedDate { get; set; }
     public DateTime? ModifiedDate { get; set; }
     public Process? Process { get; set; }
