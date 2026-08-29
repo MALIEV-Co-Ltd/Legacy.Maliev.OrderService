@@ -4,12 +4,55 @@ using Legacy.Maliev.OrderService.Application.Interfaces;
 using Legacy.Maliev.OrderService.Application.Models;
 using Legacy.Maliev.OrderService.Domain;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 namespace Legacy.Maliev.OrderService.Data;
 
 public sealed class OrderRepository(OrderDbContext orders, OrderStatusDbContext statuses, IOrderCache cache, TimeProvider clock) : IOrderService
 {
-    public async Task<OrderResponse> CreateOrderAsync(UpsertOrderRequest r, CancellationToken c) { var n = Now(); var e = Map(new Order(), r); e.CreatedDate = n; e.ModifiedDate = n; orders.Add(e); await orders.SaveChangesAsync(c); return await ReadOrder(e.Id, c) ?? throw new InvalidOperationException(); }
-    public async Task<bool> DeleteOrderAsync(int id, CancellationToken c) { var d = await orders.Orders.Where(x => x.Id == id).ExecuteDeleteAsync(c) == 1; if (d) await cache.RemoveAsync(Key(id), c); return d; }
+    public async Task<OrderResponse> CreateOrderAsync(UpsertOrderRequest r, CancellationToken c)
+    {
+        if (!string.IsNullOrWhiteSpace(r.OperationKey)
+            && await ReadOrderByOperationKeyAsync(r.OperationKey.Trim(), c) is { } replay)
+        {
+            return replay;
+        }
+
+        var n = Now();
+        var entity = Map(new Order(), r);
+        entity.CreatedDate = n;
+        entity.ModifiedDate = n;
+        orders.Add(entity);
+        try
+        {
+            await orders.SaveChangesAsync(c);
+            return await ReadOrder(entity.Id, c) ?? throw new InvalidOperationException();
+        }
+        catch (DbUpdateException exception) when (
+            !string.IsNullOrWhiteSpace(r.OperationKey)
+            && exception.InnerException is PostgresException
+            {
+                SqlState: PostgresErrorCodes.UniqueViolation,
+                ConstraintName: "IX_Order_OperationKey",
+            })
+        {
+            orders.Entry(entity).State = EntityState.Detached;
+            return await ReadOrderByOperationKeyAsync(r.OperationKey.Trim(), c)
+                ?? throw new InvalidOperationException("The durable order operation could not be replayed.", exception);
+        }
+    }
+    public async Task<bool> DeleteOrderAsync(int id, CancellationToken c)
+    {
+        // Status history is stored in its own legacy database, so this cleanup is deliberately
+        // replay-safe rather than pretending the two databases share one transaction.
+        await statuses.History.Where(x => x.OrderId == id).ExecuteDeleteAsync(c);
+
+        await using var transaction = await orders.Database.BeginTransactionAsync(c);
+        await orders.Files.Where(x => x.OrderId == id).ExecuteDeleteAsync(c);
+        var deleted = await orders.Orders.Where(x => x.Id == id).ExecuteDeleteAsync(c) == 1;
+        await transaction.CommitAsync(c);
+        if (deleted) await cache.RemoveAsync(Key(id), c);
+        return deleted;
+    }
     public async Task<OrderResponse?> GetOrderAsync(int id, CancellationToken c) { var v = await cache.GetAsync<OrderResponse>(Key(id), c); if (v is not null) return v; v = await ReadOrder(id, c); if (v is not null) await cache.SetAsync(Key(id), v, TimeSpan.FromMinutes(2), c); return v; }
     public async Task<PaginatedResponse<OrderResponse>?> GetOrdersAsync(int? customerId, bool pending, OrderSortType? sort, string? search, int page, int size, CancellationToken c)
     {
@@ -94,7 +137,38 @@ public sealed class OrderRepository(OrderDbContext orders, OrderStatusDbContext 
     public async Task<ProcessResponse> CreateProcessAsync(UpsertProcessRequest r, CancellationToken c) { var n = Now(); var e = new Process { CategoryId = r.CategoryId, Name = r.Name.Trim(), CreatedDate = n, ModifiedDate = n }; orders.Add(e); await orders.SaveChangesAsync(c); return Proc(e); }
     public Task<bool> DeleteProcessAsync(int id, CancellationToken c) => Delete(orders.Processes, id, c); public async Task<IReadOnlyList<ProcessResponse>> GetProcessesAsync(string? category, CancellationToken c) { var q = orders.Processes.AsNoTracking(); if (!string.IsNullOrWhiteSpace(category)) q = q.Where(x => x.Category != null && x.Category.Name == category); return await q.OrderBy(x => x.Id).Select(x => new ProcessResponse(x.Id, x.CategoryId, x.Name, x.CreatedDate, x.ModifiedDate)).ToListAsync(c); }
     public async Task<ProcessResponse?> GetProcessAsync(int id, CancellationToken c) => await orders.Processes.AsNoTracking().Where(x => x.Id == id).Select(x => new ProcessResponse(x.Id, x.CategoryId, x.Name, x.CreatedDate, x.ModifiedDate)).SingleOrDefaultAsync(c); public async Task<bool> UpdateProcessAsync(int id, UpsertProcessRequest r, CancellationToken c) { var e = await orders.Processes.FindAsync([id], c); if (e is null) return false; e.CategoryId = r.CategoryId; e.Name = r.Name.Trim(); e.ModifiedDate = Now(); await orders.SaveChangesAsync(c); return true; }
-    public async Task<OrderFileResponse?> CreateFileAsync(int orderId, string bucket, string objectName, CancellationToken c) { if (!await orders.Orders.AnyAsync(x => x.Id == orderId, c)) return null; var n = Now(); var e = new OrderFile { OrderId = orderId, Bucket = bucket.Trim(), ObjectName = objectName.Trim(), CreatedDate = n, ModifiedDate = n }; orders.Add(e); await orders.SaveChangesAsync(c); return File(e); }
+    public async Task<OrderFileResponse?> CreateFileAsync(int orderId, string bucket, string objectName, CancellationToken c)
+    {
+        if (!await orders.Orders.AnyAsync(x => x.Id == orderId, c)) return null;
+        var normalizedBucket = bucket.Trim();
+        var normalizedObjectName = objectName.Trim();
+        var existing = await orders.Files.AsNoTracking()
+            .Where(x => x.OrderId == orderId && x.Bucket == normalizedBucket && x.ObjectName == normalizedObjectName)
+            .Select(x => new OrderFileResponse(x.Id, x.OrderId, x.Bucket, x.ObjectName, x.CreatedDate, x.ModifiedDate))
+            .SingleOrDefaultAsync(c);
+        if (existing is not null) return existing;
+
+        var now = Now();
+        var entity = new OrderFile { OrderId = orderId, Bucket = normalizedBucket, ObjectName = normalizedObjectName, CreatedDate = now, ModifiedDate = now };
+        orders.Add(entity);
+        try
+        {
+            await orders.SaveChangesAsync(c);
+            return File(entity);
+        }
+        catch (DbUpdateException exception) when (exception.InnerException is PostgresException
+        {
+            SqlState: PostgresErrorCodes.UniqueViolation,
+            ConstraintName: "IX_OrderFile_OrderID_Bucket_ObjectName",
+        })
+        {
+            orders.Entry(entity).State = EntityState.Detached;
+            return await orders.Files.AsNoTracking()
+                .Where(x => x.OrderId == orderId && x.Bucket == normalizedBucket && x.ObjectName == normalizedObjectName)
+                .Select(x => new OrderFileResponse(x.Id, x.OrderId, x.Bucket, x.ObjectName, x.CreatedDate, x.ModifiedDate))
+                .SingleAsync(c);
+        }
+    }
     public Task<bool> DeleteFileAsync(int id, CancellationToken c) => Delete(orders.Files, id, c); public async Task<OrderFileResponse?> GetFileAsync(int id, CancellationToken c) => await ProjectFiles(orders.Files.AsNoTracking().Where(x => x.Id == id)).SingleOrDefaultAsync(c); public async Task<IReadOnlyList<OrderFileResponse>> GetFilesAsync(int orderId, CancellationToken c) => await ProjectFiles(orders.Files.AsNoTracking().Where(x => x.OrderId == orderId).OrderBy(x => x.Id)).ToListAsync(c); public async Task<bool> UpdateFileAsync(int id, UpsertOrderFileRequest r, CancellationToken c) { var e = await orders.Files.FindAsync([id], c); if (e is null) return false; e.OrderId = r.OrderId ?? e.OrderId; e.Bucket = r.Bucket.Trim(); e.ObjectName = r.ObjectName.Trim(); e.ModifiedDate = Now(); await orders.SaveChangesAsync(c); return true; }
     public async Task<OrderStatusResponse> CreateStatusAsync(UpsertOrderStatusRequest r, CancellationToken c) { var n = Now(); var e = new OrderStatus { Name = r.Name, Description = r.Description, CreatedDate = n, ModifiedDate = n }; statuses.Add(e); await statuses.SaveChangesAsync(c); return Status(e); }
     public Task<bool> DeleteStatusAsync(int id, CancellationToken c) => Delete(statuses.Statuses, id, c); public async Task<IReadOnlyList<OrderStatusResponse>> GetStatusesAsync(CancellationToken c) => await ProjectStatuses(statuses.Statuses.AsNoTracking().OrderBy(x => x.Id)).ToListAsync(c); public async Task<OrderStatusResponse?> GetStatusAsync(int id, CancellationToken c) => await ProjectStatuses(statuses.Statuses.AsNoTracking().Where(x => x.Id == id)).SingleOrDefaultAsync(c); public async Task<OrderStatusResponse?> GetStatusAsync(string name, CancellationToken c) => await ProjectStatuses(statuses.Statuses.AsNoTracking().Where(x => x.Name == name)).SingleOrDefaultAsync(c); public async Task<bool> UpdateStatusAsync(int id, UpsertOrderStatusRequest r, CancellationToken c) { var e = await statuses.Statuses.FindAsync([id], c); if (e is null) return false; e.Name = r.Name; e.Description = r.Description; e.ModifiedDate = Now(); await statuses.SaveChangesAsync(c); return true; }
@@ -120,8 +194,7 @@ public sealed class OrderRepository(OrderDbContext orders, OrderStatusDbContext 
                 .OrderByDescending(x => x.Id)
                 .Select(x => (int?)x.OrderStatusId)
                 .FirstOrDefaultAsync(c);
-            if (current == statusId
-                && string.Equals(target.Name, "Accepted", StringComparison.OrdinalIgnoreCase))
+            if (current == statusId)
             {
                 await tx.CommitAsync(c);
                 return UpdateResult.Updated;
@@ -223,7 +296,8 @@ public sealed class OrderRepository(OrderDbContext orders, OrderStatusDbContext 
             .FirstOrDefaultAsync(c);
 
     private DateTime Now() => DateTime.SpecifyKind(clock.GetUtcNow().UtcDateTime, DateTimeKind.Unspecified); private static string Key(int id) => $"order:{id}"; private Task<OrderResponse?> ReadOrder(int id, CancellationToken c) => ProjectOrders(orders.Orders.AsNoTracking().Where(x => x.Id == id)).SingleOrDefaultAsync(c); private static async Task<PaginatedResponse<T>?> Page<T>(IQueryable<T> q, int p, int s, CancellationToken c) { p = Math.Max(p, 1); s = Math.Clamp(s, 1, 250); var n = await q.CountAsync(c); if (n == 0) return null; return new(await q.Skip((p - 1) * s).Take(s).ToListAsync(c), p, (int)Math.Ceiling(n / (double)s), n); }
-    private static Order Map(Order x, UpsertOrderRequest r) { x.CustomerId = r.CustomerId; x.EmployeeId = r.EmployeeId; x.Name = r.Name; x.Description = r.Description; x.ProcessId = r.ProcessId; x.MaterialId = r.MaterialId; x.SurfaceFinishId = r.SurfaceFinishId; x.ColorId = r.ColorId; x.Quantity = r.Quantity; x.Manufactured = r.Manufactured; x.UnitPrice = r.UnitPrice; x.DiscountPercent = r.DiscountPercent; x.CurrencyId = r.CurrencyId; x.LeadTime = r.LeadTime; x.PromisedDate = r.PromisedDate; x.FinishedDate = r.FinishedDate; x.Comment = r.Comment; x.AllowSocialMedia = r.AllowSocialMedia; x.AllowCancellation = r.AllowCancellation; x.AllowPayment = r.AllowPayment; x.TrackingNumber = r.TrackingNumber; return x; }
+    private static Order Map(Order x, UpsertOrderRequest r) { x.CustomerId = r.CustomerId; x.EmployeeId = r.EmployeeId; x.Name = r.Name; x.Description = r.Description; x.ProcessId = r.ProcessId; x.MaterialId = r.MaterialId; x.SurfaceFinishId = r.SurfaceFinishId; x.ColorId = r.ColorId; x.Quantity = r.Quantity; x.Manufactured = r.Manufactured; x.UnitPrice = r.UnitPrice; x.DiscountPercent = r.DiscountPercent; x.CurrencyId = r.CurrencyId; x.LeadTime = r.LeadTime; x.PromisedDate = r.PromisedDate; x.FinishedDate = r.FinishedDate; x.Comment = r.Comment; x.AllowSocialMedia = r.AllowSocialMedia; x.AllowCancellation = r.AllowCancellation; x.AllowPayment = r.AllowPayment; x.TrackingNumber = r.TrackingNumber; if (x.Id == 0) x.OperationKey = r.OperationKey?.Trim(); return x; }
+    private Task<OrderResponse?> ReadOrderByOperationKeyAsync(string operationKey, CancellationToken c) => ProjectOrders(orders.Orders.AsNoTracking().Where(x => x.OperationKey == operationKey)).SingleOrDefaultAsync(c);
     private static IQueryable<OrderResponse> ProjectOrders(IQueryable<Order> q) => q.Select(x => new OrderResponse(x.Id, x.CustomerId, x.EmployeeId, x.Name, x.Description, x.ProcessId, x.MaterialId, x.SurfaceFinishId, x.ColorId, x.Quantity, x.Manufactured, x.Remaining, x.UnitPrice, x.DiscountPercent, x.Subtotal, x.CurrencyId, x.LeadTime, x.PromisedDate, x.FinishedDate, x.Turnaround, x.Comment, x.AllowSocialMedia, x.AllowCancellation, x.AllowPayment, x.TrackingNumber, x.CreatedDate, x.ModifiedDate)); private static IQueryable<OrderFileResponse> ProjectFiles(IQueryable<OrderFile> q) => q.Select(x => new OrderFileResponse(x.Id, x.OrderId, x.Bucket, x.ObjectName, x.CreatedDate, x.ModifiedDate)); private static IQueryable<OrderStatusResponse> ProjectStatuses(IQueryable<OrderStatus> q) => q.Select(x => new OrderStatusResponse(x.Id, x.Name, x.Description, x.CreatedDate, x.ModifiedDate)); private static CategoryResponse Cat(Category x) => new(x.Id, x.Name, x.CreatedDate, x.ModifiedDate); private static FileFormatResponse Format(FileFormat x) => new(x.Id, x.Name, x.Extension, x.CreatedDate, x.ModifiedDate); private static ProcessResponse Proc(Process x) => new(x.Id, x.CategoryId, x.Name, x.CreatedDate, x.ModifiedDate); private static OrderFileResponse File(OrderFile x) => new(x.Id, x.OrderId, x.Bucket, x.ObjectName, x.CreatedDate, x.ModifiedDate); private static OrderStatusResponse Status(OrderStatus x) => new(x.Id, x.Name, x.Description, x.CreatedDate, x.ModifiedDate);
     private static async Task<bool> Delete<T>(DbSet<T> s, int id, CancellationToken c) where T : class => await s.Where(x => EF.Property<int>(x, "Id") == id).ExecuteDeleteAsync(c) == 1;
 }

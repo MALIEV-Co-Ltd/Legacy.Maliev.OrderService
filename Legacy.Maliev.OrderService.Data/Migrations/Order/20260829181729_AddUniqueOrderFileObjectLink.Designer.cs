@@ -3,6 +3,7 @@ using System;
 using Legacy.Maliev.OrderService.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Legacy.Maliev.OrderService.Data.Migrations.Order
 {
     [DbContext(typeof(OrderDbContext))]
-    partial class OrderDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260829181729_AddUniqueOrderFileObjectLink")]
+    partial class AddUniqueOrderFileObjectLink
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -157,10 +160,6 @@ namespace Legacy.Maliev.OrderService.Data.Migrations.Order
                         .HasColumnType("character varying(100)")
                         .HasDefaultValue("unnamed");
 
-                    b.Property<string>("OperationKey")
-                        .HasMaxLength(128)
-                        .HasColumnType("character varying(128)");
-
                     b.Property<int>("ProcessId")
                         .HasColumnType("integer")
                         .HasColumnName("ProcessID");
@@ -200,9 +199,6 @@ namespace Legacy.Maliev.OrderService.Data.Migrations.Order
                         .HasColumnType("numeric(18,2)");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("OperationKey")
-                        .IsUnique();
 
                     b.HasIndex("ProcessId");
 

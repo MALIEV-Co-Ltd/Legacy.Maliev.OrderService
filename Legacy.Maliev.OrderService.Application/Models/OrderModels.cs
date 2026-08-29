@@ -23,7 +23,8 @@ public sealed record UpsertOrderRequest(
     bool AllowSocialMedia,
     bool AllowCancellation,
     bool AllowPayment,
-    string? TrackingNumber);
+    string? TrackingNumber,
+    [property: StringLength(128)] string? OperationKey = null);
 public sealed record ProcessResponse(int Id, int CategoryId, string Name, DateTime? CreatedDate, DateTime? ModifiedDate); public sealed record UpsertProcessRequest(int CategoryId, string Name);
 public sealed record CategoryResponse(int Id, string? Name, DateTime? CreatedDate, DateTime? ModifiedDate); public sealed record UpsertCategoryRequest(string? Name);
 public sealed record FileFormatResponse(int Id, string? Name, string? Extension, DateTime? CreatedDate, DateTime? ModifiedDate); public sealed record UpsertFileFormatRequest(string? Name, string? Extension);
