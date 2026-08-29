@@ -246,8 +246,7 @@ namespace Legacy.Maliev.OrderService.Data.Migrations.Order
 
                     b.HasKey("Id");
 
-                    b.HasIndex("OrderId", "Bucket", "ObjectName")
-                        .IsUnique();
+                    b.HasIndex("OrderId");
 
                     b.ToTable("OrderFile", (string)null);
                 });

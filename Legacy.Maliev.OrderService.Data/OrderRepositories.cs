@@ -139,35 +139,28 @@ public sealed class OrderRepository(OrderDbContext orders, OrderStatusDbContext 
     public async Task<ProcessResponse?> GetProcessAsync(int id, CancellationToken c) => await orders.Processes.AsNoTracking().Where(x => x.Id == id).Select(x => new ProcessResponse(x.Id, x.CategoryId, x.Name, x.CreatedDate, x.ModifiedDate)).SingleOrDefaultAsync(c); public async Task<bool> UpdateProcessAsync(int id, UpsertProcessRequest r, CancellationToken c) { var e = await orders.Processes.FindAsync([id], c); if (e is null) return false; e.CategoryId = r.CategoryId; e.Name = r.Name.Trim(); e.ModifiedDate = Now(); await orders.SaveChangesAsync(c); return true; }
     public async Task<OrderFileResponse?> CreateFileAsync(int orderId, string bucket, string objectName, CancellationToken c)
     {
-        if (!await orders.Orders.AnyAsync(x => x.Id == orderId, c)) return null;
         var normalizedBucket = bucket.Trim();
         var normalizedObjectName = objectName.Trim();
+        var lockIdentity = $"order-file\n{orderId}\n{normalizedBucket}\n{normalizedObjectName}";
+        await using var transaction = await orders.Database.BeginTransactionAsync(c);
+        await orders.Database.ExecuteSqlInterpolatedAsync(
+            $"SELECT pg_advisory_xact_lock(hashtextextended({lockIdentity}, 0))",
+            c);
+
+        if (!await orders.Orders.AnyAsync(x => x.Id == orderId, c)) return null;
         var existing = await orders.Files.AsNoTracking()
             .Where(x => x.OrderId == orderId && x.Bucket == normalizedBucket && x.ObjectName == normalizedObjectName)
+            .OrderBy(x => x.Id)
             .Select(x => new OrderFileResponse(x.Id, x.OrderId, x.Bucket, x.ObjectName, x.CreatedDate, x.ModifiedDate))
-            .SingleOrDefaultAsync(c);
+            .FirstOrDefaultAsync(c);
         if (existing is not null) return existing;
 
         var now = Now();
         var entity = new OrderFile { OrderId = orderId, Bucket = normalizedBucket, ObjectName = normalizedObjectName, CreatedDate = now, ModifiedDate = now };
         orders.Add(entity);
-        try
-        {
-            await orders.SaveChangesAsync(c);
-            return File(entity);
-        }
-        catch (DbUpdateException exception) when (exception.InnerException is PostgresException
-        {
-            SqlState: PostgresErrorCodes.UniqueViolation,
-            ConstraintName: "IX_OrderFile_OrderID_Bucket_ObjectName",
-        })
-        {
-            orders.Entry(entity).State = EntityState.Detached;
-            return await orders.Files.AsNoTracking()
-                .Where(x => x.OrderId == orderId && x.Bucket == normalizedBucket && x.ObjectName == normalizedObjectName)
-                .Select(x => new OrderFileResponse(x.Id, x.OrderId, x.Bucket, x.ObjectName, x.CreatedDate, x.ModifiedDate))
-                .SingleAsync(c);
-        }
+        await orders.SaveChangesAsync(c);
+        await transaction.CommitAsync(c);
+        return File(entity);
     }
     public Task<bool> DeleteFileAsync(int id, CancellationToken c) => Delete(orders.Files, id, c); public async Task<OrderFileResponse?> GetFileAsync(int id, CancellationToken c) => await ProjectFiles(orders.Files.AsNoTracking().Where(x => x.Id == id)).SingleOrDefaultAsync(c); public async Task<IReadOnlyList<OrderFileResponse>> GetFilesAsync(int orderId, CancellationToken c) => await ProjectFiles(orders.Files.AsNoTracking().Where(x => x.OrderId == orderId).OrderBy(x => x.Id)).ToListAsync(c); public async Task<bool> UpdateFileAsync(int id, UpsertOrderFileRequest r, CancellationToken c) { var e = await orders.Files.FindAsync([id], c); if (e is null) return false; e.OrderId = r.OrderId ?? e.OrderId; e.Bucket = r.Bucket.Trim(); e.ObjectName = r.ObjectName.Trim(); e.ModifiedDate = Now(); await orders.SaveChangesAsync(c); return true; }
     public async Task<OrderStatusResponse> CreateStatusAsync(UpsertOrderStatusRequest r, CancellationToken c) { var n = Now(); var e = new OrderStatus { Name = r.Name, Description = r.Description, CreatedDate = n, ModifiedDate = n }; statuses.Add(e); await statuses.SaveChangesAsync(c); return Status(e); }

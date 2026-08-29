@@ -39,6 +39,59 @@ public sealed class OrderPostgresMigrationTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task LegacyDuplicateOrderFileLinks_ArePreservedAndReplayReturnsLowestId()
+    {
+        await using var firstOrders = OC();
+        await using var statuses = SC();
+        await Task.WhenAll(firstOrders.Database.MigrateAsync(), statuses.Database.MigrateAsync());
+        var firstRepository = Repo(firstOrders, statuses);
+        var process = await CreateProcessAsync(firstRepository);
+        var order = await firstRepository.CreateOrderAsync(Request(process.Id), default);
+        var created = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
+        firstOrders.Files.AddRange(
+            new OrderFile
+            {
+                OrderId = order.Id,
+                Bucket = "maliev-quotation-requests",
+                ObjectName = "instant-quotation/legacy-duplicate.stl",
+                CreatedDate = created,
+                ModifiedDate = created,
+            },
+            new OrderFile
+            {
+                OrderId = order.Id,
+                Bucket = "maliev-quotation-requests",
+                ObjectName = "instant-quotation/legacy-duplicate.stl",
+                CreatedDate = created.AddSeconds(1),
+                ModifiedDate = created.AddSeconds(1),
+            });
+        await firstOrders.SaveChangesAsync();
+        var expectedId = await firstOrders.Files
+            .Where(file => file.OrderId == order.Id)
+            .MinAsync(file => file.Id);
+
+        await using var secondOrders = OC();
+        await using var secondStatuses = SC();
+        var secondRepository = Repo(secondOrders, secondStatuses);
+        var results = await Task.WhenAll(
+            firstRepository.CreateFileAsync(
+                order.Id,
+                " maliev-quotation-requests ",
+                " instant-quotation/legacy-duplicate.stl ",
+                default),
+            secondRepository.CreateFileAsync(
+                order.Id,
+                "maliev-quotation-requests",
+                "instant-quotation/legacy-duplicate.stl",
+                default));
+
+        Assert.All(results, result => Assert.Equal(expectedId, result?.Id));
+        firstOrders.ChangeTracker.Clear();
+        Assert.Equal(2, await firstOrders.Files.AsNoTracking()
+            .CountAsync(file => file.OrderId == order.Id));
+    }
+
+    [Fact]
     public async Task ConcurrentExactOrderOperation_ReturnsOneDurableOrder()
     {
         await using var firstOrders = OC();
