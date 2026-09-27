@@ -31,8 +31,8 @@ public sealed class WorkflowContractTests
     public void BuildAndTest_RejectsCommentedDependencySha()
     {
         AssertMutationRejected(
-            "ref: 9c4ac9d44a08bcd0aa2088348790ab863814669c",
-            "ref: main # 9c4ac9d44a08bcd0aa2088348790ab863814669c");
+            "ref: d22f0e6f95254b10cf4fe891c8dce5df7c419f3f",
+            "ref: main # d22f0e6f95254b10cf4fe891c8dce5df7c419f3f");
     }
 
     [Fact]
@@ -41,6 +41,23 @@ public sealed class WorkflowContractTests
         Assert.Contains("Legacy.Maliev.ServiceDefaults", ApiProject, StringComparison.Ordinal);
         Assert.DoesNotContain("Maliev.Aspire\\Maliev.Aspire.ServiceDefaults", ApiProject, StringComparison.Ordinal);
         Assert.DoesNotContain("Include=\"Maliev.Aspire.ServiceDefaults\"", ApiProject, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Source5ac_UsesVerifiedLoggingAndSelfContainedPublisherBuild()
+    {
+        var program = File.ReadAllText(FindRepositoryFile("Legacy.Maliev.OrderService.Api", "Program.cs"));
+        var dockerfile = File.ReadAllText(FindRepositoryFile("Legacy.Maliev.OrderService.Api", "Dockerfile"));
+        var publisher = File.ReadAllText(FindRepositoryFile(".github", "workflows", "publish-image.yml"));
+
+        Assert.Contains("AddServiceDefaults()", program, StringComparison.Ordinal);
+        Assert.Contains("UseStandardMiddleware()", program, StringComparison.Ordinal);
+        Assert.DoesNotContain("NativeLogging", program, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("ref: d22f0e6f95254b10cf4fe891c8dce5df7c419f3f", Workflow, StringComparison.Ordinal);
+        Assert.Contains("context: .", publisher, StringComparison.Ordinal);
+        Assert.Contains("git clone", dockerfile, StringComparison.Ordinal);
+        Assert.Contains("checkout d22f0e6f95254b10cf4fe891c8dce5df7c419f3f", dockerfile, StringComparison.Ordinal);
+        Assert.DoesNotContain("COPY .dependencies/", dockerfile, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -193,7 +210,7 @@ internal static partial class WorkflowContractValidator
             new Dictionary<string, string>(StringComparer.Ordinal)
             {
                 ["repository"] = "MALIEV-Co-Ltd/Legacy.Maliev.ServiceDefaults",
-                ["ref"] = "9c4ac9d44a08bcd0aa2088348790ab863814669c",
+                ["ref"] = "d22f0e6f95254b10cf4fe891c8dce5df7c419f3f",
                 ["path"] = ".dependencies/Legacy.Maliev.ServiceDefaults",
                 ["persist-credentials"] = "false",
             });
