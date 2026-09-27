@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.Reflection;
 using Legacy.Maliev.OrderService.Api.Authorization;
 using Legacy.Maliev.OrderService.Application.Interfaces;
 using Legacy.Maliev.OrderService.Application.Models;
@@ -63,7 +64,18 @@ public sealed class OrdersController(IOrderService s, IIdempotencyStore idem) : 
     private static BadRequestObjectResult? InvalidRequest(UpsertOrderRequest request)
     {
         var results = new List<ValidationResult>();
-        if (Validator.TryValidateObject(request, new ValidationContext(request), results, true)) return null;
+        // MVC reads record validation metadata from constructor parameters. Direct callers of
+        // this controller still need to enforce those same constraints before persistence.
+        foreach (var parameter in typeof(UpsertOrderRequest).GetConstructors().Single().GetParameters())
+        {
+            var attributes = parameter.GetCustomAttributes<ValidationAttribute>().ToArray();
+            if (attributes.Length == 0) continue;
+            var value = typeof(UpsertOrderRequest).GetProperty(parameter.Name!)!.GetValue(request);
+            Validator.TryValidateValue(value,
+                new ValidationContext(request) { MemberName = parameter.Name }, results, attributes);
+        }
+
+        if (results.Count == 0) return null;
 
         var errors = results
             .SelectMany(result => result.MemberNames.DefaultIfEmpty(string.Empty), (result, member) => new { member, result.ErrorMessage })

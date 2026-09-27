@@ -5,8 +5,8 @@ public sealed record OrderResponse(int Id, int? CustomerId, int? EmployeeId, str
 public sealed record UpsertOrderRequest(
     int? CustomerId,
     int? EmployeeId,
-    [property: StringLength(100)] string? Name,
-    [property: StringLength(250)] string? Description,
+    [param: StringLength(100)] string? Name,
+    [param: StringLength(250)] string? Description,
     int ProcessId,
     int? MaterialId,
     int? SurfaceFinishId,
@@ -24,7 +24,7 @@ public sealed record UpsertOrderRequest(
     bool AllowCancellation,
     bool AllowPayment,
     string? TrackingNumber,
-    [property: StringLength(128)] string? OperationKey = null);
+    [param: StringLength(128)] string? OperationKey = null);
 public sealed record ProcessResponse(int Id, int CategoryId, string Name, DateTime? CreatedDate, DateTime? ModifiedDate); public sealed record UpsertProcessRequest(int CategoryId, string Name);
 public sealed record CategoryResponse(int Id, string? Name, DateTime? CreatedDate, DateTime? ModifiedDate); public sealed record UpsertCategoryRequest(string? Name);
 public sealed record FileFormatResponse(int Id, string? Name, string? Extension, DateTime? CreatedDate, DateTime? ModifiedDate); public sealed record UpsertFileFormatRequest(string? Name, string? Extension);
