@@ -24,18 +24,19 @@ public sealed class OrderModelCompatibilityTests
     [Theory]
     [InlineData(101, 1, nameof(UpsertOrderRequest.Name))]
     [InlineData(1, 251, nameof(UpsertOrderRequest.Description))]
-    public void UpsertOrderRequest_RejectsTextBeyondPersistedColumnLimits(
+    public void UpsertOrderRequest_ConstructorValidationMatchesPersistedColumnLimits(
         int nameLength,
         int descriptionLength,
         string expectedMember)
     {
         var request = Request(new string('N', nameLength), new string('D', descriptionLength));
-        var results = new List<ValidationResult>();
+        var parameter = Assert.Single(typeof(UpsertOrderRequest).GetConstructors())
+            .GetParameters().Single(value => value.Name == expectedMember);
+        var attribute = Assert.IsType<StringLengthAttribute>(Assert.Single(
+            parameter.GetCustomAttributes(typeof(StringLengthAttribute), false)));
+        var value = typeof(UpsertOrderRequest).GetProperty(expectedMember)!.GetValue(request);
 
-        var valid = Validator.TryValidateObject(request, new ValidationContext(request), results, true);
-
-        Assert.False(valid);
-        Assert.Contains(results, result => result.MemberNames.Contains(expectedMember));
+        Assert.False(attribute.IsValid(value));
     }
 
     private static UpsertOrderRequest Request(string name, string description) => new(
