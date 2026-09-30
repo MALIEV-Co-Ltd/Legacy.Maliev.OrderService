@@ -63,7 +63,12 @@ public sealed class HistoriesController(IOrderService s, IIdempotencyStore idem)
     [HttpDelete("{historyId:int}"), RequirePermission(OrderPermissions.StatusDelete)] public async Task<IActionResult> DeleteHistoryAsync(int historyId, CancellationToken c) => await s.DeleteHistoryAsync(historyId, c) ? NoContent() : NotFound();
     [HttpGet("{orderId:int}/latest", Name = "GetLatest"), RequirePermission(OrderPermissions.StatusRead)] public async Task<ActionResult<OrderStatusResponse>> GetLatestAsync(int orderId, CancellationToken c) { var v = await s.GetLatestStatusAsync(orderId, c); return v is null ? NotFound() : v; }
     [HttpGet("{orderId:int}", Name = "GetHistory"), RequirePermission(OrderPermissions.StatusRead)] public async Task<ActionResult<IReadOnlyList<OrderStatusHistoryResponse>>> GetOrderHistoryAsync(int orderId, CancellationToken c) { var v = await s.GetHistoryAsync(orderId, c); return v.Count == 0 ? NotFound() : Ok(v); }
-    [HttpPut("{historyId:int}"), RequirePermission(OrderPermissions.StatusWrite, IsCritical = true)] public async Task<IActionResult> UpdateOrderHistoryAsync(int historyId, UpsertOrderStatusHistoryRequest i, [FromHeader(Name = "X-Expected-Modified-Date")] DateTimeOffset? expected, CancellationToken c) => Result(await s.UpdateHistoryAsync(historyId, i, expected, c));
+    [HttpPut("{historyId:int}"), RequirePermission(OrderPermissions.StatusWrite, IsCritical = true)]
+    public async Task<IActionResult> UpdateOrderHistoryAsync(int historyId, UpsertOrderStatusHistoryRequest i, [FromHeader(Name = "X-Expected-Modified-Date")] DateTimeOffset? expected, CancellationToken c)
+    {
+        var result = await s.UpdateHistoryAsync(historyId, i, expected, c);
+        return result == UpdateResult.Updated ? NoContent() : Result(result);
+    }
     private async Task<IActionResult> Named(int id, string name, string? key, CancellationToken c)
     {
         try
