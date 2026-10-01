@@ -41,13 +41,28 @@ public sealed class OrdersController(IOrderService s, IIdempotencyStore idem) : 
             return StatusCode(StatusCodes.Status503ServiceUnavailable, "Idempotency protection is temporarily unavailable.");
         }
     }
-    [HttpDelete("{id:int}"), RequirePermission(OrderPermissions.Delete, ResourcePathTemplate = "/orders/{id}", IsCritical = true)] public async Task<IActionResult> DeleteOrderAsync(int id, CancellationToken c) => await s.DeleteOrderAsync(id, c) ? NoContent() : NotFound();
+    [HttpDelete("{id:int}"), RequirePermission(OrderPermissions.Delete, ResourcePathTemplate = "/orders/{id}", IsCritical = true), ServiceFilter(typeof(OrderDeletionAdmissionFilter))]
+    public async Task<IActionResult> DeleteOrderAsync(int id, CancellationToken c)
+    {
+        try { return await s.DeleteOrderAsync(id, c) ? NoContent() : NotFound(); }
+        catch (OrderDeletionUnavailableException) { return StatusCode(StatusCodes.Status503ServiceUnavailable, "Order deletion is temporarily unavailable."); }
+        catch (OrderDeletionConflictException) { return Conflict("Order lifetime conflicts with its deletion receipt."); }
+    }
+    [OrderLifetimeConflict]
     [HttpGet("{id:int}", Name = "GetOrder"), RequirePermission(OrderPermissions.Read, ResourcePathTemplate = "/orders/{id}")] public async Task<ActionResult<OrderResponse>> GetOrderAsync(int id, CancellationToken c) { var v = await s.GetOrderAsync(id, c); return v is null ? NotFound() : v; }
+    [OrderLifetimeConflict]
     [HttpGet("pending"), RequirePermission(OrderPermissions.Read)] public async Task<ActionResult<PaginatedResponse<OrderResponse>>> GetPaginatedPendingOrderAsync([FromQuery] OrderSortType? sort, [FromQuery] string? search, [FromQuery] int? index, [FromQuery] int? size, CancellationToken c) { var v = await s.GetOrdersAsync(null, true, sort, search, index ?? 1, size ?? 50, c); return v is null ? NotFound() : v; }
+    [OrderLifetimeConflict]
     [HttpGet, RequirePermission(OrderPermissions.Read)] public async Task<ActionResult<PaginatedResponse<OrderResponse>>> GetPaginatedOrderAsync([FromQuery] OrderSortType? sort, [FromQuery] string? search, [FromQuery] int? index, [FromQuery] int? size, CancellationToken c) { var v = await s.GetOrdersAsync(null, false, sort, search, index ?? 1, size ?? 50, c); return v is null ? NotFound() : v; }
+    [OrderLifetimeConflict]
     [HttpGet("customers/{customerId:int}"), RequirePermission(OrderPermissions.CustomerRead, ResourcePathTemplate = "/customers/{customerId}/orders")] public async Task<ActionResult<PaginatedResponse<OrderResponse>>> GetCustomerOrdersAsync(int customerId, [FromQuery] OrderSortType? sort, [FromQuery] string? search, [FromQuery] int? index, [FromQuery] int? size, CancellationToken c) { var v = await s.GetOrdersAsync(customerId, false, sort, search, index ?? 1, size ?? 50, c); return v is null ? NotFound() : v; }
+    [OrderLifetimeConflict]
     [HttpGet("customers/{customerId:int}/{id:int}"), RequirePermission(OrderPermissions.CustomerRead, ResourcePathTemplate = "/customers/{customerId}/orders/{id}")] public async Task<ActionResult<CustomerOrderDetails>> GetCustomerOrderAsync(int customerId, int id, CancellationToken c) { var v = await s.GetCustomerOrderAsync(customerId, id, c); return v is null ? NotFound() : v; }
+    [OrderMutationUnavailable]
+    [OrderLifetimeConflict]
     [HttpPost("customers/{customerId:int}/{id:int}/cancel"), RequirePermission(OrderPermissions.CustomerCancel, ResourcePathTemplate = "/customers/{customerId}/orders/{id}", IsCritical = true)] public async Task<IActionResult> CancelCustomerOrderAsync(int customerId, int id, CancellationToken c) => (await s.CancelCustomerOrderAsync(customerId, id, c)) switch { UpdateResult.Updated => NoContent(), UpdateResult.InvalidTransition => Conflict("Order cannot be cancelled in its current state."), UpdateResult.Conflict => Conflict("Order was modified by another request."), _ => NotFound() };
+    [OrderMutationUnavailable]
+    [OrderLifetimeConflict]
     [HttpPut("{id:int}"), RequirePermission(OrderPermissions.Update, ResourcePathTemplate = "/orders/{id}", IsCritical = true)]
     public async Task<IActionResult> UpdateOrderAsync(int id, UpsertOrderRequest i, [FromHeader(Name = "X-Expected-Modified-Date")] DateTimeOffset? expected, CancellationToken c)
     {
