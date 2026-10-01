@@ -9,20 +9,50 @@ namespace Legacy.Maliev.OrderService.Api.Controllers;
 [ApiController, Route("orderstatuses/[controller]"), Authorize]
 public sealed class HistoriesController(IOrderService s, IIdempotencyStore idem) : ControllerBase
 {
+    [OrderMutationUnavailable]
+    [OrderLifetimeConflict]
     [HttpPost("{orderId:int}/accepted"), RequirePermission(OrderPermissions.StatusWrite, IsCritical = true)] public Task<IActionResult> CreateOrderHistoryAcceptedStatusAsync(int orderId, [FromHeader(Name = "Idempotency-Key")] string? key, CancellationToken c) => Named(orderId, "Accepted", key, c);
+    [OrderMutationUnavailable]
+    [OrderLifetimeConflict]
     [HttpPost("{orderId:int}/cancelled"), RequirePermission(OrderPermissions.StatusWrite, IsCritical = true)] public Task<IActionResult> CreateOrderHistoryCancelledStatusAsync(int orderId, [FromHeader(Name = "Idempotency-Key")] string? key, CancellationToken c) => Named(orderId, "Cancelled", key, c);
+    [OrderMutationUnavailable]
+    [OrderLifetimeConflict]
     [HttpPost("{orderId:int}/declined"), RequirePermission(OrderPermissions.StatusWrite, IsCritical = true)] public Task<IActionResult> CreateOrderHistoryDeclinedStatusAsync(int orderId, [FromHeader(Name = "Idempotency-Key")] string? key, CancellationToken c) => Named(orderId, "Declined", key, c);
+    [OrderMutationUnavailable]
+    [OrderLifetimeConflict]
     [HttpPost("{orderId:int}/expired"), RequirePermission(OrderPermissions.StatusWrite, IsCritical = true)] public Task<IActionResult> CreateOrderHistoryExpiredStatusAsync(int orderId, [FromHeader(Name = "Idempotency-Key")] string? key, CancellationToken c) => Named(orderId, "Expired", key, c);
+    [OrderMutationUnavailable]
+    [OrderLifetimeConflict]
     [HttpPost("{orderId:int}/finished"), RequirePermission(OrderPermissions.StatusWrite, IsCritical = true)] public Task<IActionResult> CreateOrderHistoryFinishedStatusAsync(int orderId, [FromHeader(Name = "Idempotency-Key")] string? key, CancellationToken c) => Named(orderId, "Finished", key, c);
+    [OrderMutationUnavailable]
+    [OrderLifetimeConflict]
     [HttpPost("{orderId:int}/InProgress"), RequirePermission(OrderPermissions.StatusWrite, IsCritical = true)] public Task<IActionResult> CreateOrderHistoryInProgressStatusAsync(int orderId, [FromHeader(Name = "Idempotency-Key")] string? key, CancellationToken c) => Named(orderId, "InProgress", key, c);
+    [OrderMutationUnavailable]
+    [OrderLifetimeConflict]
     [HttpPost("{orderId:int}/new"), RequirePermission(OrderPermissions.StatusWrite, IsCritical = true)] public Task<IActionResult> CreateOrderHistoryNewStatusAsync(int orderId, [FromHeader(Name = "Idempotency-Key")] string? key, CancellationToken c) => Named(orderId, "New", key, c);
+    [OrderMutationUnavailable]
+    [OrderLifetimeConflict]
     [HttpPost("{orderId:int}/paid"), RequirePermission(OrderPermissions.StatusWrite, IsCritical = true)] public Task<IActionResult> CreateOrderHistoryPaidStatusAsync(int orderId, [FromHeader(Name = "Idempotency-Key")] string? key, CancellationToken c) => Named(orderId, "Paid", key, c);
+    [OrderMutationUnavailable]
+    [OrderLifetimeConflict]
     [HttpPost("{orderId:int}/quoted"), RequirePermission(OrderPermissions.StatusWrite, IsCritical = true)] public Task<IActionResult> CreateOrderHistoryQuotedStatusAsync(int orderId, [FromHeader(Name = "Idempotency-Key")] string? key, CancellationToken c) => Named(orderId, "Quoted", key, c);
+    [OrderMutationUnavailable]
+    [OrderLifetimeConflict]
     [HttpPost("{orderId:int}/rejected"), RequirePermission(OrderPermissions.StatusWrite, IsCritical = true)] public Task<IActionResult> CreateOrderHistoryRejectedStatusAsync(int orderId, [FromHeader(Name = "Idempotency-Key")] string? key, CancellationToken c) => Named(orderId, "Rejected", key, c);
+    [OrderMutationUnavailable]
+    [OrderLifetimeConflict]
     [HttpPost("{orderId:int}/reopen"), RequirePermission(OrderPermissions.StatusWrite, IsCritical = true)] public Task<IActionResult> CreateOrderHistoryReopenStatusAsync(int orderId, [FromHeader(Name = "Idempotency-Key")] string? key, CancellationToken c) => Named(orderId, "Reopen", key, c);
+    [OrderMutationUnavailable]
+    [OrderLifetimeConflict]
     [HttpPost("{orderId:int}/reviewed"), RequirePermission(OrderPermissions.StatusWrite, IsCritical = true)] public Task<IActionResult> CreateOrderHistoryReviewedStatusAsync(int orderId, [FromHeader(Name = "Idempotency-Key")] string? key, CancellationToken c) => Named(orderId, "Reviewed", key, c);
+    [OrderMutationUnavailable]
+    [OrderLifetimeConflict]
     [HttpPost("{orderId:int}/reviewing"), RequirePermission(OrderPermissions.StatusWrite, IsCritical = true)] public Task<IActionResult> CreateOrderHistoryReviewingStatusAsync(int orderId, [FromHeader(Name = "Idempotency-Key")] string? key, CancellationToken c) => Named(orderId, "Reviewing", key, c);
+    [OrderMutationUnavailable]
+    [OrderLifetimeConflict]
     [HttpPost("{orderId:int}/shipped"), RequirePermission(OrderPermissions.StatusWrite, IsCritical = true)] public Task<IActionResult> CreateOrderHistoryShippedStatusAsync(int orderId, [FromHeader(Name = "Idempotency-Key")] string? key, CancellationToken c) => Named(orderId, "Shipped", key, c);
+    [OrderMutationUnavailable]
+    [OrderLifetimeConflict]
     [HttpPost("{orderId:int}/{statusId:int}"), RequirePermission(OrderPermissions.StatusWrite, IsCritical = true)]
     public async Task<IActionResult> CreateOrderStatusEntryAsync(int orderId, int statusId, [FromHeader(Name = "Idempotency-Key")] string? key, CancellationToken c)
     {
@@ -60,9 +90,15 @@ public sealed class HistoriesController(IOrderService s, IIdempotencyStore idem)
             return StatusCode(StatusCodes.Status503ServiceUnavailable, "Idempotency protection is temporarily unavailable.");
         }
     }
+    [OrderMutationUnavailable]
+    [OrderLifetimeConflict]
     [HttpDelete("{historyId:int}"), RequirePermission(OrderPermissions.StatusDelete)] public async Task<IActionResult> DeleteHistoryAsync(int historyId, CancellationToken c) => await s.DeleteHistoryAsync(historyId, c) ? NoContent() : NotFound();
+    [OrderLifetimeConflict]
     [HttpGet("{orderId:int}/latest", Name = "GetLatest"), RequirePermission(OrderPermissions.StatusRead)] public async Task<ActionResult<OrderStatusResponse>> GetLatestAsync(int orderId, CancellationToken c) { var v = await s.GetLatestStatusAsync(orderId, c); return v is null ? NotFound() : v; }
+    [OrderLifetimeConflict]
     [HttpGet("{orderId:int}", Name = "GetHistory"), RequirePermission(OrderPermissions.StatusRead)] public async Task<ActionResult<IReadOnlyList<OrderStatusHistoryResponse>>> GetOrderHistoryAsync(int orderId, CancellationToken c) { var v = await s.GetHistoryAsync(orderId, c); return v.Count == 0 ? NotFound() : Ok(v); }
+    [OrderMutationUnavailable]
+    [OrderLifetimeConflict]
     [HttpPut("{historyId:int}"), RequirePermission(OrderPermissions.StatusWrite, IsCritical = true)]
     public async Task<IActionResult> UpdateOrderHistoryAsync(int historyId, UpsertOrderStatusHistoryRequest i, [FromHeader(Name = "X-Expected-Modified-Date")] DateTimeOffset? expected, CancellationToken c)
     {

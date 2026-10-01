@@ -6,9 +6,20 @@ namespace Legacy.Maliev.OrderService.Data;
 
 public sealed class OrderDbContext(DbContextOptions<OrderDbContext> options) : DbContext(options)
 {
+    public DbSet<OrderDeletionIntent> DeletionIntents => Set<OrderDeletionIntent>();
     public DbSet<Order> Orders => Set<Order>(); public DbSet<Process> Processes => Set<Process>(); public DbSet<Category> Categories => Set<Category>(); public DbSet<FileFormat> FileFormats => Set<FileFormat>(); public DbSet<OrderFile> Files => Set<OrderFile>();
     protected override void OnModelCreating(ModelBuilder b)
     {
+        var intent = b.Entity<OrderDeletionIntent>();
+        intent.ToTable("OrderDeletionIntent", t => t.HasCheckConstraint("CK_OrderDeletionIntent_AttemptCount", "\"AttemptCount\" >= 0"));
+        intent.HasKey(x => x.OrderId);
+        intent.Property(x => x.OrderId).ValueGeneratedNever();
+        intent.HasIndex(x => x.DeletionId).IsUnique();
+        intent.HasIndex(x => new { x.NextAttemptAtUtc, x.OrderId }).HasDatabaseName("IX_OrderDeletionIntent_PendingDue").HasFilter("\"CompletedAtUtc\" IS NULL");
+        intent.Property(x => x.RequestedAtUtc).HasColumnType("timestamp with time zone");
+        intent.Property(x => x.StatusCleanupCompletedAtUtc).HasColumnType("timestamp with time zone");
+        intent.Property(x => x.CompletedAtUtc).HasColumnType("timestamp with time zone");
+        intent.Property(x => x.NextAttemptAtUtc).HasColumnType("timestamp with time zone");
         var c = b.Entity<Category>(); c.ToTable("Category"); c.HasKey(x => x.Id); c.Property(x => x.Id).HasColumnName("ID").ValueGeneratedOnAdd(); c.Property(x => x.Name).HasMaxLength(50); Dates(c);
         var f = b.Entity<FileFormat>(); f.ToTable("FileFormat"); f.HasKey(x => x.Id); f.Property(x => x.Id).HasColumnName("ID").ValueGeneratedOnAdd(); f.Property(x => x.Name).HasMaxLength(50); f.Property(x => x.Extension).HasMaxLength(50); Dates(f);
         var p = b.Entity<Process>(); p.ToTable("Process"); p.HasKey(x => x.Id); p.Property(x => x.Id).HasColumnName("ID").ValueGeneratedOnAdd(); p.Property(x => x.CategoryId).HasColumnName("CategoryID"); p.Property(x => x.Name).HasMaxLength(50).IsRequired(); Dates(p); p.HasOne(x => x.Category).WithMany(x => x.Processes).HasForeignKey(x => x.CategoryId).OnDelete(DeleteBehavior.NoAction).HasConstraintName("FK_Process_Category");
