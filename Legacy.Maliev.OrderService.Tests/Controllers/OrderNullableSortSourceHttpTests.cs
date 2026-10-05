@@ -129,8 +129,13 @@ public sealed class OrderNullableSortSourceHttpTests(OrderDeletionReadinessFixtu
         {
             database.Orders.Add(new Order
             {
-                Id = id, CustomerId = 7, Name = "Selected", Process = process, Quantity = 1,
-                PromisedDate = day.AddDays(10), CreatedDate = id == 22 ? day.AddDays(2) : day,
+                Id = id,
+                CustomerId = 7,
+                Name = "Selected",
+                Process = process,
+                Quantity = 1,
+                PromisedDate = day.AddDays(10),
+                CreatedDate = id == 22 ? day.AddDays(2) : day,
                 ModifiedDate = id == 22 ? day : day.AddDays(2),
             });
         }
