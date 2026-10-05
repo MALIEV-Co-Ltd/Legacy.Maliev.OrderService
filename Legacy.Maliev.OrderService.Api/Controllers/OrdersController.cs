@@ -48,6 +48,7 @@ public sealed class OrdersController(IOrderService s, IIdempotencyStore idem) : 
         catch (OrderDeletionUnavailableException) { return StatusCode(StatusCodes.Status503ServiceUnavailable, "Order deletion is temporarily unavailable."); }
         catch (OrderDeletionConflictException) { return Conflict("Order lifetime conflicts with its deletion receipt."); }
     }
+    /// <summary>Reads one order including persisted computed totals and calendar turnaround.</summary>
     [OrderLifetimeConflict]
     [HttpGet("{id:int}", Name = "GetOrder"), RequirePermission(OrderPermissions.Read, ResourcePathTemplate = "/orders/{id}")] public async Task<ActionResult<OrderResponse>> GetOrderAsync(int id, CancellationToken c) { var v = await s.GetOrderAsync(id, c); return v is null ? NotFound() : v; }
     [OrderLifetimeConflict]

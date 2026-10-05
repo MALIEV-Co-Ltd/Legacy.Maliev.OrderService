@@ -100,8 +100,10 @@ public sealed class OrderOpenApiHttpContractTests(OrderDeletionReadinessFixture 
         foreach (var name in new[] { "Remaining", "Subtotal", "Turnaround", "CreatedDate", "ModifiedDate", "OrderFiles", "Process" })
             Assert.False(input.ContainsKey(name), $"Unexpected writable field {name}.");
         Assert.False(input.ContainsKey("customerId"));
+        Assert.Equal("Writable order fields; computed values and server timestamps are not accepted.", request["description"]?.GetValue<string>());
         var response = Resolve(document, Path(document, "/orders/{id}")["get"]!["responses"]!["200"]!["content"]!["application/json"]!["schema"]!.AsObject());
         var output = response["properties"]!.AsObject();
+        Assert.Equal("An order snapshot with scalar service references and persisted computed values.", response["description"]?.GetValue<string>());
         foreach (var name in new[] { "Id", "Remaining", "Subtotal", "Turnaround", "CreatedDate", "ModifiedDate" })
             Assert.True(output.ContainsKey(name), $"Missing response field {name}.");
         await using var app = await fixture.AppAsync(null);
@@ -137,6 +139,9 @@ public sealed class OrderOpenApiHttpContractTests(OrderDeletionReadinessFixture 
         Assert.False(wire.ContainsKey("Turnaround"));
         Assert.All(wire, field => Assert.True(output.ContainsKey(field.Key), $"Wire field {field.Key} is absent from the response schema."));
         var metadata = Resolve(document, Path(document, "/orders/files/{id}")["put"]!["requestBody"]!["content"]!["application/json"]!["schema"]!.AsObject());
+        Assert.Equal("Bucket and object metadata for an owned order; no object upload is performed.", metadata["description"]?.GetValue<string>());
         Assert.Equal(new[] { "Bucket", "ObjectName", "OrderId" }, metadata["properties"]!.AsObject().Select(field => field.Key).Order().ToArray());
+        Assert.Equal("Reads one order including persisted computed totals and calendar turnaround.", Path(document, "/orders/{id}")["get"]?["summary"]?.GetValue<string>());
+        Assert.Equal("Creates bucket and object metadata for an existing order without uploading an object.", Path(document, "/orders/{orderId}/files")["post"]?["summary"]?.GetValue<string>());
     }
 }

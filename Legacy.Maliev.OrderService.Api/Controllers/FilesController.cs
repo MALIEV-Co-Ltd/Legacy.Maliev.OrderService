@@ -9,6 +9,7 @@ namespace Legacy.Maliev.OrderService.Api.Controllers;
 [ApiController, Route("orders/[controller]"), Authorize]
 public sealed class FilesController(IOrderService s) : ControllerBase
 {
+    /// <summary>Creates bucket and object metadata for an existing order without uploading an object.</summary>
     [OrderMutationUnavailable]
     [OrderLifetimeConflict]
     [HttpPost("/orders/{orderId:int}/files"), RequirePermission(OrderPermissions.FilesWrite, ResourcePathTemplate = "/orders/{orderId}")] public async Task<IActionResult> CreateOrderFileEntryAsync(int orderId, [FromQuery] string bucket, [FromQuery] string objectName, CancellationToken c) { if (string.IsNullOrWhiteSpace(bucket) || string.IsNullOrWhiteSpace(objectName)) return BadRequest(); var v = await s.CreateFileAsync(orderId, bucket, objectName, c); return v is null ? NotFound() : CreatedAtRoute("GetOrderFile", new { id = v.Id }, v); }
