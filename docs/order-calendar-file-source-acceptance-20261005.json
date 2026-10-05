@@ -237,5 +237,182 @@
     "Approved target signed-JWT policy retained; no forced liveIAM added",
     "Real FileService/Intranet/joined IAM and deployment acceptance not established",
     "No source/canonical/ledger/provider writes"
-  ]
+  ],
+  "supplementalContractAcceptance": {
+    "identity": "order-openapi-catalog-status-http-contract-20261005",
+    "cases": 10,
+    "nativeExecuted": false,
+    "accepted": false,
+    "purpose": "Advertised route/schema and real catalog/status lifecycle contracts; no wholesale source parity claim.",
+    "records": [
+      {
+        "sourceSha": "5fac706a7983a6d359b39acbd670e6800afe020e",
+        "parents": [],
+        "paths": [
+          {
+            "path": "Maliev.OrderService.Api/Controllers/CategoriesController.cs",
+            "owners": [
+              "Legacy.Maliev.OrderService"
+            ],
+            "disposition": "migration-required",
+            "decision": null,
+            "blobSha1": "1d013ebbfa31ce859f9dea60f78c665254078afe",
+            "sha256": "a0ee5afd9f39d6cce00a25b34fbec09bdaf65f4aa4eb075b0cfa8f2a2348ea6e"
+          },
+          {
+            "path": "Maliev.OrderService.Api/Controllers/FileFormatsController.cs",
+            "owners": [
+              "Legacy.Maliev.OrderService"
+            ],
+            "disposition": "migration-required",
+            "decision": null,
+            "blobSha1": "5d6da037da66140c0a47b0803a838d94cc44e219",
+            "sha256": "c64fb33c99745faa1a61c1f2f193fa511e369d47a79c3209d8e07b82fc987fc0"
+          },
+          {
+            "path": "Maliev.OrderService.Api/Controllers/ProcessesController.cs",
+            "owners": [
+              "Legacy.Maliev.OrderService"
+            ],
+            "disposition": "migration-required",
+            "decision": null,
+            "blobSha1": "d65fe4fff0427579467baf94333117776451de11",
+            "sha256": "fc2f2efe5e70ec1ae5a0f767577713374345406d7202fce224f4228fe1963016"
+          },
+          {
+            "path": "Maliev.OrderService.Data/Database/OrderContext/Category.cs",
+            "owners": [
+              "Legacy.Maliev.OrderService"
+            ],
+            "disposition": "migration-required",
+            "decision": null,
+            "blobSha1": "5e335cfb31e3d0e73789e434b7ebd822b6c23ade",
+            "sha256": "744a2cd0ab28219975592d5d32c48dd207e72f02ed5ebe9286c771e6b3bad498"
+          },
+          {
+            "path": "Maliev.OrderService.Data/Database/OrderContext/FileFormat.cs",
+            "owners": [
+              "Legacy.Maliev.OrderService"
+            ],
+            "disposition": "migration-required",
+            "decision": null,
+            "blobSha1": "4852b2aa43fafcb1a27bdbe3dbf3fafd65f95b53",
+            "sha256": "682c2218c095ad343bc0fc58ce1a07b79d3bd1d2c3674a320f11e112d2d89e10"
+          },
+          {
+            "path": "Maliev.OrderService.Data/Database/OrderContext/Process.cs",
+            "owners": [
+              "Legacy.Maliev.OrderService"
+            ],
+            "disposition": "migration-required",
+            "decision": null,
+            "blobSha1": "4aa5b918ccf968d85728b0f9919d7fc866f9f34b",
+            "sha256": "7b4c58f7b2fe8dbae998e72eda9b0fef37461f11a5e36ae5721410e8f72f047e"
+          },
+          {
+            "path": "Maliev.OrderStatusService.Api/Controllers/AvailableStatusesController.cs",
+            "owners": [
+              "Legacy.Maliev.OrderService"
+            ],
+            "disposition": "migration-required",
+            "decision": null,
+            "blobSha1": "8dff5376558bdcb262e3b717ab10245f45e7b5ee",
+            "sha256": "3efc9a1e40932da613c3f92ed8151ad90f9bdfe7241297d48ffb65269fc5f604"
+          },
+          {
+            "path": "Maliev.OrderStatusService.Api/Controllers/OrderStatusesController.cs",
+            "owners": [
+              "Legacy.Maliev.OrderService"
+            ],
+            "disposition": "migration-required",
+            "decision": null,
+            "blobSha1": "65d40f242c27d82c22359748f2beac339361b692",
+            "sha256": "942228467d8b7a6b6a3a921bbc99a9691f57351141247190d798be870a616f06"
+          },
+          {
+            "path": "Maliev.OrderStatusService.Data/Database/OrderStatusContext/OrderStatus.cs",
+            "owners": [
+              "Legacy.Maliev.OrderService"
+            ],
+            "disposition": "migration-required",
+            "decision": null,
+            "blobSha1": "39dd78a41ad51606349592cf3fe2181693544ab0",
+            "sha256": "2fa629befb18488fbd1c85ca3639568803498db42437fa200d21764af58ebaca"
+          },
+          {
+            "path": "Maliev.OrderStatusService.Data/Database/OrderStatusContext/OrderStatusHasPossibleStatus.cs",
+            "owners": [
+              "Legacy.Maliev.OrderService"
+            ],
+            "disposition": "migration-required",
+            "decision": null,
+            "blobSha1": "8d547cb3b7103bb63d0a24234ba67efda30872c5",
+            "sha256": "430c05400e651cbe1c6c954846ab02923a8d9d551659e5877b7a3a7eaedfb45d"
+          }
+        ],
+        "accepted": false,
+        "wholeCommitClosed": false
+      },
+      {
+        "sourceSha": "72eb9f1949176392141951d35e6e06f7c30af4c2",
+        "parents": [
+          "023aa2f143fa5a8f557d72c1302b9add64792d6a"
+        ],
+        "paths": [
+          {
+            "path": "Maliev.OrderService.Data/Database/OrderContext/Category.cs",
+            "owners": [
+              "Legacy.Maliev.OrderService"
+            ],
+            "disposition": "migration-required",
+            "decision": null,
+            "blobSha1": "a15c2cab37d63f244851279482c52e49d3ca556c",
+            "sha256": "ce2d913b4ed7453716486359c334f545b457f63ff767b2bbe929b133e8948f1b"
+          },
+          {
+            "path": "Maliev.OrderService.Data/Database/OrderContext/FileFormat.cs",
+            "owners": [
+              "Legacy.Maliev.OrderService"
+            ],
+            "disposition": "migration-required",
+            "decision": null,
+            "blobSha1": "9001b8fbfd4626b5e5469a1558c0d1f4f094ba9d",
+            "sha256": "c94658fc258768df528947fcb16fe5ebba8d0b2b2d8779e320f5439d3def0f30"
+          },
+          {
+            "path": "Maliev.OrderService.Data/Database/OrderContext/Process.cs",
+            "owners": [
+              "Legacy.Maliev.OrderService"
+            ],
+            "disposition": "migration-required",
+            "decision": null,
+            "blobSha1": "acbee8dadd794dfa8817e4b44fcce1c50123aacd",
+            "sha256": "f8b44dcdca5b4887591ef0e76743245067a55e7e0e7f9f21ea7a84c8707f1d79"
+          },
+          {
+            "path": "Maliev.OrderStatusService.Data/Database/OrderStatusContext/OrderStatus.cs",
+            "owners": [
+              "Legacy.Maliev.OrderService"
+            ],
+            "disposition": "migration-required",
+            "decision": null,
+            "blobSha1": "625c6cfea220b94cb4176b18a17d3b9d29d25072",
+            "sha256": "3f34bde8d13157d201598a034525493a9bb0078fc07ac9be655e3306b8c2595d"
+          },
+          {
+            "path": "Maliev.OrderStatusService.Data/Database/OrderStatusContext/OrderStatusHasPossibleStatus.cs",
+            "owners": [
+              "Legacy.Maliev.OrderService"
+            ],
+            "disposition": "migration-required",
+            "decision": null,
+            "blobSha1": "158cdec19c5f5b82563914e62fef0f185dfceaa1",
+            "sha256": "0da5e09c4e86a3e80361038eb295af2ea5a3a36bd3422e191536f1632f4c8ad8"
+          }
+        ],
+        "accepted": false,
+        "wholeCommitClosed": false
+      }
+    ]
+  }
 }
