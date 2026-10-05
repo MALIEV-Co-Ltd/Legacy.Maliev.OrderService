@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using Legacy.Maliev.OrderService.Application.Interfaces;
 using Legacy.Maliev.OrderService.Application.Models;
 using Legacy.Maliev.OrderService.Data;
 using Legacy.Maliev.OrderService.Domain;
@@ -46,6 +47,10 @@ public sealed class OrderCalendarTurnaroundHttpTests(OrderDeletionReadinessFixtu
             orderId = order.Id;
             database.ChangeTracker.Clear();
             Assert.Equal(expected, (await database.Orders.AsNoTracking().SingleAsync()).Turnaround);
+            // Each theory creates new databases whose identities restart at 1, while the
+            // fixture shares Redis. Remove only that previous database's read-cache key.
+            await scope.ServiceProvider.GetRequiredService<IOrderCache>()
+                .RemoveAsync($"order:{orderId}", CancellationToken.None);
         }
         using var client = app.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", fixture.Token("legacy.orders.read"));

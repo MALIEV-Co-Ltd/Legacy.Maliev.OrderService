@@ -141,7 +141,14 @@ public sealed class OrderFileMetadataLifecycleHttpTests(OrderDeletionReadinessFi
     [Fact]
     public async Task MetadataCreate_RepeatedObject_CurrentIdempotencyPolicyReturnsSingleRecord()
     {
-        await using var app = await fixture.AppAsync(null);
+        // Keep exact record equality at the database's microsecond precision rather
+        // than introducing a difference between fresh and persisted clock ticks.
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 10, 3, 12, 0, 0, TimeSpan.Zero));
+        await using var app = await fixture.AppAsync(null, configure: services =>
+        {
+            services.RemoveAll<TimeProvider>();
+            services.AddSingleton<TimeProvider>(clock);
+        });
         var order = await SeedOrderAsync(app, "Repeated object parent");
         using var client = Client(app, OrderPermissions.FilesWrite);
         using var first = await client.PostAsync($"/orders/{order}/files?bucket=metadata&objectName=same.step", null);
