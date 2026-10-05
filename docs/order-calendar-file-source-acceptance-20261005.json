@@ -1,0 +1,241 @@
+{
+  "identity": "order-calendar-file-metadata-source-acceptance-20261005",
+  "sourceCheckpoint": "135e526d0dab85c415b3afdcefd7b70fe2c82e2f",
+  "trackingCommittedHead": "5d0c986bdd06a4782506e337191c434b6710d913",
+  "targetBase": "7847203d2f8a0903f7b2ad404d815d7aff34da39",
+  "cases": {
+    "calendar": 6,
+    "fileMetadata": 11
+  },
+  "sourceObjects": [
+    {
+      "sourceSha": "5fac706a7983a6d359b39acbd670e6800afe020e",
+      "parents": [],
+      "subject": "Initial commit",
+      "paths": [
+        {
+          "path": "Maliev.OrderService.Api/Controllers/FilesController.cs",
+          "owners": [
+            "Legacy.Maliev.OrderService"
+          ],
+          "disposition": "migration-required",
+          "blobSha1": "3621dbe000faa67a60fda392f1ec80c56f50f255",
+          "sha256": "28ae08046b143d1cc94909956e798fbb580dcfa044f9be4b0d758a96b89a09ea"
+        },
+        {
+          "path": "Maliev.OrderService.Data/Database/OrderContext/Order.cs",
+          "owners": [
+            "Legacy.Maliev.OrderService"
+          ],
+          "disposition": "migration-required",
+          "blobSha1": "70ded58871c119559b009ae184d589707d628a0a",
+          "sha256": "c438d90e2bd395aeea2b31ce871047f6b49ec4a9177af393685cb6af9fcbfc9a"
+        },
+        {
+          "path": "Maliev.OrderService.Data/Database/OrderContext/OrderContext.cs",
+          "owners": [
+            "Legacy.Maliev.OrderService"
+          ],
+          "disposition": "migration-required",
+          "blobSha1": "130b92275a21a2ff9b5b6ac3d1d92f0e1074a001",
+          "sha256": "38f40f5a378fc44a5fbe8bfb8744c17427e511d632a3e798c804f0621b3f9e16"
+        },
+        {
+          "path": "Maliev.OrderService.Data/Database/OrderContext/OrderFile.cs",
+          "owners": [
+            "Legacy.Maliev.OrderService"
+          ],
+          "disposition": "migration-required",
+          "blobSha1": "790e23c20ff406d15c99b722e3a0559b8c43f974",
+          "sha256": "0fa3c5af311b42ea94552fbfd95980272ae58555829684b3b7b6ce9f45700de7"
+        }
+      ],
+      "wholeCommitClosed": false,
+      "priorOwnerResolution": {
+        "status": "pending",
+        "issueUrls": [],
+        "prUrls": [],
+        "mergedTargetSha": null,
+        "validationEvidenceUrls": []
+      },
+      "bundleObligation": true,
+      "evidencePurpose": "Partial runtime lifecycle/computed-field evidence"
+    },
+    {
+      "sourceSha": "72eb9f1949176392141951d35e6e06f7c30af4c2",
+      "parents": [
+        "023aa2f143fa5a8f557d72c1302b9add64792d6a"
+      ],
+      "subject": "update",
+      "paths": [
+        {
+          "path": "Maliev.OrderService.Data/Database/OrderContext/Order.cs",
+          "owners": [
+            "Legacy.Maliev.OrderService"
+          ],
+          "disposition": "migration-required",
+          "blobSha1": "30edf546084e82fb710986c386740f2cc9132fc6",
+          "sha256": "dc95db55f5ce6e10884af30c674d360b57133c682cfa0e43ceb1ed54e9b5947d"
+        },
+        {
+          "path": "Maliev.OrderService.Data/Database/OrderContext/OrderContext.cs",
+          "owners": [
+            "Legacy.Maliev.OrderService"
+          ],
+          "disposition": "migration-required",
+          "blobSha1": "c95270b54fcb6a82cf50e920bea5a0d020ed546f",
+          "sha256": "1bd46218f9191f00148b5d75a0a8df3966fed8febbd389fad9f1826547270820"
+        },
+        {
+          "path": "Maliev.OrderService.Data/Database/OrderContext/OrderFile.cs",
+          "owners": [
+            "Legacy.Maliev.OrderService"
+          ],
+          "disposition": "migration-required",
+          "blobSha1": "f6fa00f63b591e20b622bcd8dbb1e287f0456e3d",
+          "sha256": "d9a04dc2f8f87aa86767828539ba261aa8847f49e81c59f793e03cfd16473c14"
+        }
+      ],
+      "wholeCommitClosed": false,
+      "priorOwnerResolution": {
+        "status": "pending",
+        "issueUrls": [],
+        "prUrls": [],
+        "mergedTargetSha": null,
+        "validationEvidenceUrls": []
+      },
+      "bundleObligation": true,
+      "evidencePurpose": "Partial runtime lifecycle/computed-field evidence"
+    },
+    {
+      "sourceSha": "2aab25eb07894fc0267b03b85bad96490219d2fa",
+      "parents": [
+        "56014f2efc7c7f24b777c51d17a454e023d12bdd"
+      ],
+      "subject": "security: externalize design-time database connections",
+      "paths": [
+        {
+          "path": "Maliev.OrderService.Data/Database/OrderContext/OrderContext.cs",
+          "owners": [
+            "Legacy.Maliev.OrderService"
+          ],
+          "disposition": "migration-required",
+          "blobSha1": "79d9f74582553559cdbb41417d7be4e1113db6d1",
+          "sha256": "74acbd871acc8ef034984321370e92038e37a81543194de8aaf9a3ab4754ed85"
+        }
+      ],
+      "wholeCommitClosed": false,
+      "priorOwnerResolution": {
+        "status": "pending",
+        "issueUrls": [],
+        "prUrls": [],
+        "mergedTargetSha": null,
+        "validationEvidenceUrls": []
+      },
+      "bundleObligation": false,
+      "evidencePurpose": "Read-only lineage; no duplicate source resolution or design-time acceptance claimed"
+    },
+    {
+      "sourceSha": "eb8ed86672bd9afccc6560b547b734d0fcd7363b",
+      "parents": [
+        "6da103d234ea312ce3b404fefaed343c172517b1",
+        "868b5909406cc3759254ee10520e04d4ad5beab0"
+      ],
+      "subject": "Merge pull request #18 from MALIEV-Co-Ltd/codex/wave0-secret-remediation",
+      "paths": [
+        {
+          "path": "Maliev.OrderService.Data/Database/OrderContext/OrderContext.cs",
+          "owners": [
+            "Legacy.Maliev.OrderService"
+          ],
+          "disposition": "migration-required",
+          "blobSha1": "79d9f74582553559cdbb41417d7be4e1113db6d1",
+          "sha256": "74acbd871acc8ef034984321370e92038e37a81543194de8aaf9a3ab4754ed85"
+        }
+      ],
+      "wholeCommitClosed": false,
+      "priorOwnerResolution": {
+        "status": "pending",
+        "issueUrls": [],
+        "prUrls": [],
+        "mergedTargetSha": null,
+        "validationEvidenceUrls": []
+      },
+      "bundleObligation": false,
+      "evidencePurpose": "Read-only lineage; no duplicate source resolution or design-time acceptance claimed"
+    },
+    {
+      "sourceSha": "a649db99a27bda65274fe1b18866ae226d3c69cf",
+      "parents": [
+        "d5d67b65a69ae4b53bfe94e2a669a5d4680696ab",
+        "eb8ed86672bd9afccc6560b547b734d0fcd7363b"
+      ],
+      "subject": "Merge remote-tracking branch 'origin/main'",
+      "paths": [
+        {
+          "path": "Maliev.OrderService.Data/Database/OrderContext/OrderContext.cs",
+          "owners": [
+            "Legacy.Maliev.OrderService"
+          ],
+          "disposition": "migration-required",
+          "blobSha1": "79d9f74582553559cdbb41417d7be4e1113db6d1",
+          "sha256": "74acbd871acc8ef034984321370e92038e37a81543194de8aaf9a3ab4754ed85"
+        }
+      ],
+      "wholeCommitClosed": false,
+      "priorOwnerResolution": {
+        "status": "pending",
+        "issueUrls": [],
+        "prUrls": [],
+        "mergedTargetSha": null,
+        "validationEvidenceUrls": []
+      },
+      "bundleObligation": false,
+      "evidencePurpose": "Read-only lineage; no duplicate source resolution or design-time acceptance claimed"
+    },
+    {
+      "sourceSha": "7b311e4e7f0dd80be0441abc2625dab295179f1a",
+      "parents": [
+        "0fc91415d35550b48b002c2a36b01ec64089b1a8"
+      ],
+      "subject": "Prevent order truncation failures and repair fleet diagnostics",
+      "paths": [
+        {
+          "path": "Maliev.OrderService.Data/Database/OrderContext/Order.cs",
+          "owners": [
+            "Legacy.Maliev.OrderService"
+          ],
+          "disposition": "migration-required",
+          "blobSha1": "94ed738967cb01b0f550882835fa780df57e564d",
+          "sha256": "83dda12b5edc7d659959a6e072abf417156d0d6f051768820c235ce860702a3b"
+        }
+      ],
+      "wholeCommitClosed": false,
+      "priorOwnerResolution": {
+        "status": "migrated",
+        "issueUrls": [
+          "https://github.com/MALIEV-Co-Ltd/Legacy.Maliev.OrderService/issues/36"
+        ],
+        "prUrls": [
+          "https://github.com/MALIEV-Co-Ltd/Legacy.Maliev.OrderService/pull/37"
+        ],
+        "mergedTargetSha": "69603e640f17e44667301625ef4c229091af3a62",
+        "validationEvidenceUrls": [
+          "https://github.com/MALIEV-Co-Ltd/Legacy.Maliev.OrderService/actions/runs/36348374610",
+          "https://github.com/MALIEV-Co-Ltd/Legacy.Maliev.OrderService/issues/36#issuecomment-5859547118"
+        ]
+      },
+      "bundleObligation": false,
+      "evidencePurpose": "Read-only lineage; no duplicate source resolution or design-time acceptance claimed"
+    }
+  ],
+  "nativeExecuted": false,
+  "accepted": false,
+  "wholeInitialSourceClosed": false,
+  "limits": [
+    "Partial four-path behavioral bundle; remaining original route/model/ownership acceptance is separate",
+    "Approved target signed-JWT policy retained; no forced liveIAM added",
+    "Real FileService/Intranet/joined IAM and deployment acceptance not established",
+    "No source/canonical/ledger/provider writes"
+  ]
+}
