@@ -1,7 +1,14 @@
-name: Build and test
+name: Focused Order source acceptance
 
 on:
-  workflow_call:
+  pull_request:
+    branches: [main, develop, staging]
+    paths:
+      - "Legacy.Maliev.OrderService.Application/**"
+      - "Legacy.Maliev.OrderService.Data/**"
+      - "Legacy.Maliev.OrderService.Tests/**"
+      - ".github/workflows/order-source-focused.yml"
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -14,7 +21,8 @@ jobs:
       MalievWorkspaceRoot: ${{ github.workspace }}/.dependencies
       VSTestCollect: XPlat Code Coverage
       VSTestLogger: trx
-      VSTestResultsDirectory: ${{ github.workspace }}/runner-results
+      VSTestResultsDirectory: ${{ github.workspace }}/focused-results
+      VSTestTestCaseFilter: FullyQualifiedName~OrderCalendarTurnaroundHttpTests|FullyQualifiedName~OrderFileMetadataLifecycleHttpTests|FullyQualifiedName~OrderOpenApiHttpContractTests|FullyQualifiedName~OrderCatalogLifecycleHttpTests
     steps:
       - name: Check out OrderService
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -37,15 +45,13 @@ jobs:
       - name: Validate .NET solution
         uses: MALIEV-Co-Ltd/Legacy.Maliev.Workflows/actions/dotnet-validate@e3a6093324a24968876782153286f52db8b29fd8
         with:
-          solution: Legacy.Maliev.OrderService.slnx
+          solution: Legacy.Maliev.OrderService.Tests/Legacy.Maliev.OrderService.Tests.csproj
           use-local-maliev-dependencies: 'true'
-      - name: Gate owned production coverage
-        run: python3 scripts/verify-runner-coverage.py runner-results
       - name: Preserve validation evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: order-validation-${{ github.sha }}
-          path: runner-results
+          name: order-source-focused-${{ github.sha }}
+          path: focused-results
           if-no-files-found: warn
           retention-days: 7

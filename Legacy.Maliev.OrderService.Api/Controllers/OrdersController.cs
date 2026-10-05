@@ -48,6 +48,15 @@ public sealed class OrdersController(IOrderService s, IIdempotencyStore idem) : 
         catch (OrderDeletionUnavailableException) { return StatusCode(StatusCodes.Status503ServiceUnavailable, "Order deletion is temporarily unavailable."); }
         catch (OrderDeletionConflictException) { return Conflict("Order lifetime conflicts with its deletion receipt."); }
     }
+    /// <summary>Reads one order including persisted computed totals and calendar turnaround.</summary>
+    /// <remarks>Computed values are read from PostgreSQL; unfinished orders omit null turnaround.</remarks>
+    /// <param name="id" example="42">Persistent order identifier.</param>
+    /// <param name="c">Request cancellation token.</param>
+    /// <returns>The order snapshot.</returns>
+    /// <response code="200">The owned order snapshot.</response>
+    /// <response code="404">The order does not exist.</response>
+    [ProducesResponseType<OrderResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
     [OrderLifetimeConflict]
     [HttpGet("{id:int}", Name = "GetOrder"), RequirePermission(OrderPermissions.Read, ResourcePathTemplate = "/orders/{id}")] public async Task<ActionResult<OrderResponse>> GetOrderAsync(int id, CancellationToken c) { var v = await s.GetOrderAsync(id, c); return v is null ? NotFound() : v; }
     [OrderLifetimeConflict]
