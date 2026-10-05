@@ -74,8 +74,14 @@ public sealed class OrderOpenApiHttpContractTests(OrderDeletionReadinessFixture 
         {
             var parameter = Assert.Single(Path(document, "/orders/{orderId}/files")["post"]!["parameters"]!.AsArray(),
                 item => item!["name"]!.GetValue<string>() == name);
+            Assert.NotNull(parameter);
             Assert.Equal("query", parameter!["in"]!.GetValue<string>());
+            Assert.False(string.IsNullOrWhiteSpace(parameter["description"]?.GetValue<string>()));
+            Assert.NotNull(parameter["example"]);
         }
+        Assert.Equal("The owned order snapshot.", Path(document, "/orders/{id}")["get"]!["responses"]!["200"]?["description"]?.GetValue<string>());
+        Assert.Equal("The order does not exist.", Path(document, "/orders/{id}")["get"]!["responses"]!["404"]?["description"]?.GetValue<string>());
+        Assert.Equal("Bucket or object name is blank.", Path(document, "/orders/{orderId}/files")["post"]!["responses"]!["400"]?["description"]?.GetValue<string>());
         foreach (var (path, method, name) in new[]
         {
             ("/orders", "post", "Idempotency-Key"),
@@ -141,6 +147,11 @@ public sealed class OrderOpenApiHttpContractTests(OrderDeletionReadinessFixture 
         var metadata = Resolve(document, Path(document, "/orders/files/{id}")["put"]!["requestBody"]!["content"]!["application/json"]!["schema"]!.AsObject());
         Assert.Equal("Bucket and object metadata for an owned order; no object upload is performed.", metadata["description"]?.GetValue<string>());
         Assert.Equal(new[] { "Bucket", "ObjectName", "OrderId" }, metadata["properties"]!.AsObject().Select(field => field.Key).Order().ToArray());
+        var example = metadata["example"] ?? metadata["examples"]?.AsArray().FirstOrDefault();
+        Assert.NotNull(example);
+        Assert.Equal(42, example["OrderId"]!.GetValue<int>());
+        Assert.Equal("metadata-bucket", example["Bucket"]!.GetValue<string>());
+        Assert.Equal("drawings/part.step", example["ObjectName"]!.GetValue<string>());
         Assert.Equal("Reads one order including persisted computed totals and calendar turnaround.", Path(document, "/orders/{id}")["get"]?["summary"]?.GetValue<string>());
         Assert.Equal("Creates bucket and object metadata for an existing order without uploading an object.", Path(document, "/orders/{orderId}/files")["post"]?["summary"]?.GetValue<string>());
     }
