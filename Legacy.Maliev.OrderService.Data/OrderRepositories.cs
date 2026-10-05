@@ -56,25 +56,28 @@ public sealed partial class OrderRepository(OrderDbContext orders, OrderStatusDb
         IQueryable<Order> q = orders.Orders.AsNoTracking();
         if (customerId is not null) q = q.Where(x => x.CustomerId == customerId);
         if (pending) q = q.Where(x => x.PromisedDate != null && x.FinishedDate == null);
-        if (!string.IsNullOrWhiteSpace(search))
+        if (!string.IsNullOrEmpty(search))
         {
-            var v = search.Trim();
+            var v = search;
             if (int.TryParse(v, out var id))
             {
                 q = q.Where(x => x.Id == id);
             }
             else
             {
-                var p = $"%{v}%";
+                var literal = v.Replace("\\", "\\\\", StringComparison.Ordinal)
+                    .Replace("%", "\\%", StringComparison.Ordinal)
+                    .Replace("_", "\\_", StringComparison.Ordinal);
+                var p = $"%{literal}%";
                 q = pending
                     ? q.Where(x =>
-                        (x.Name != null && EF.Functions.ILike(x.Name, p))
-                        || (x.Description != null && EF.Functions.ILike(x.Description, p)))
+                        (x.Name != null && EF.Functions.ILike(x.Name, p, "\\"))
+                        || (x.Description != null && EF.Functions.ILike(x.Description, p, "\\")))
                     : q.Where(x =>
-                        (x.Name != null && EF.Functions.ILike(x.Name, p))
-                        || (x.Description != null && EF.Functions.ILike(x.Description, p))
-                        || (x.TrackingNumber != null && EF.Functions.ILike(x.TrackingNumber, p))
-                        || (x.Comment != null && EF.Functions.ILike(x.Comment, p)));
+                        (x.Name != null && EF.Functions.ILike(x.Name, p, "\\"))
+                        || (x.Description != null && EF.Functions.ILike(x.Description, p, "\\"))
+                        || (x.TrackingNumber != null && EF.Functions.ILike(x.TrackingNumber, p, "\\"))
+                        || (x.Comment != null && EF.Functions.ILike(x.Comment, p, "\\")));
             }
         }
 
@@ -94,7 +97,8 @@ public sealed partial class OrderRepository(OrderDbContext orders, OrderStatusDb
             OrderSortType.OrderQuantity_Descending => q.OrderByDescending(x => x.Quantity).ThenBy(x => x.Id),
             _ => q.OrderBy(x => x.Id),
         };
-        return await Page(ProjectOrders(q), page, size, c);
+        var result = await Page(ProjectOrders(q), page, size, c);
+        return result is not null && result.Items.Count == 0 ? null : result;
     }
     public async Task<CustomerOrderDetails?> GetCustomerOrderAsync(int customerId, int orderId, CancellationToken c) { var order = await ProjectOrders(orders.Orders.AsNoTracking().Where(x => x.Id == orderId && x.CustomerId == customerId)).SingleOrDefaultAsync(c); if (order is null) return null; await using var authority = FreshOrders(); if (await IsDeletedLifetimeAsync(authority, orderId, c)) return null; var process = await GetProcessAsync(order.ProcessId, c); var history = await GetHistoryAsync(orderId, c); var files = await GetFilesAsync(orderId, c); return new(order, process, history, files); }
     public async Task<UpdateResult> CancelCustomerOrderAsync(int customerId, int orderId, CancellationToken c)

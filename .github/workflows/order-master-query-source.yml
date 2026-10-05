@@ -1,0 +1,57 @@
+name: Order master query source acceptance
+
+on:
+  pull_request:
+    branches: [main, develop, staging]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    env:
+      MalievWorkspaceRoot: ${{ github.workspace }}/.dependencies
+      VSTestCollect: XPlat Code Coverage
+      VSTestLogger: trx
+      VSTestResultsDirectory: ${{ github.workspace }}/query-results
+      VSTestTestCaseFilter: FullyQualifiedName~OrderMasterQuerySourceHttpTests
+    steps:
+      - name: Check out OrderService
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Check exact query fixture encoding
+        run: python3 -B scripts/verify-order-query.py --encoding
+      - name: Check out Legacy.Maliev.ServiceDefaults
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: MALIEV-Co-Ltd/Legacy.Maliev.ServiceDefaults
+          ref: 7edcd961024868513fd5f373cab3dcb261197f77
+          path: .dependencies/Legacy.Maliev.ServiceDefaults
+          persist-credentials: false
+      - name: Check out Legacy.Maliev.CompatibilityContracts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: MALIEV-Co-Ltd/Legacy.Maliev.CompatibilityContracts
+          ref: 78e48ffc4ee000df0510cba5e7c7a3c4c4d539d7
+          path: .dependencies/Legacy.Maliev.CompatibilityContracts
+          persist-credentials: false
+      - name: Validate .NET solution
+        uses: MALIEV-Co-Ltd/Legacy.Maliev.Workflows/actions/dotnet-validate@e3a6093324a24968876782153286f52db8b29fd8
+        with:
+          solution: Legacy.Maliev.OrderService.Tests/Legacy.Maliev.OrderService.Tests.csproj
+          use-local-maliev-dependencies: 'true'
+      - name: Verify all 27 query cases and raw evidence
+        run: python3 -B scripts/verify-order-query.py query-results
+      - name: Preserve query evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: order-query-${{ github.sha }}
+          path: query-results
+          if-no-files-found: warn
+          retention-days: 7
