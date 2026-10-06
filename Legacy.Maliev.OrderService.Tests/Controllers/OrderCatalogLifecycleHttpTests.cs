@@ -95,6 +95,8 @@ public sealed class OrderCatalogLifecycleHttpTests(OrderDeletionReadinessFixture
     [InlineData("Scanning", "scanning")]
     public async Task Process_LifecyclePreservesCategoryScopedLists(string categoryName, string segment)
     {
+        const string createdName = "  Source \u0e01\u0e23\u0e30\u0e1a\u0e27\u0e19\u0e01\u0e32\u0e23%_process  ";
+        const string updatedName = "\tUpdated \u0e01\u0e23\u0e30\u0e1a\u0e27\u0e19\u0e01\u0e32\u0e23%_process\t";
         await using var app = await AppAsync();
         using var writer = Client(app, OrderPermissions.CatalogWrite);
         using var reader = Client(app, OrderPermissions.CatalogRead);
@@ -110,9 +112,11 @@ public sealed class OrderCatalogLifecycleHttpTests(OrderDeletionReadinessFixture
         var otherProcess = (await otherProcessResponse.Content.ReadFromJsonAsync<ProcessResponse>())!;
         using var empty = await reader.GetAsync($"/orders/processes/{segment}");
         Assert.Equal(HttpStatusCode.NotFound, empty.StatusCode);
-        using var created = await writer.PostAsJsonAsync("/orders/processes", new UpsertProcessRequest(category.Id, "Owned process"));
+        using var created = await writer.PostAsJsonAsync("/orders/processes", new UpsertProcessRequest(category.Id, createdName));
         Assert.Equal(HttpStatusCode.Created, created.StatusCode);
         var value = (await created.Content.ReadFromJsonAsync<ProcessResponse>())!;
+        Assert.Equal(createdName, value.Name);
+        Assert.Equal(category.Id, value.CategoryId);
         Assert.NotNull(created.Headers.Location);
         Assert.Equal(value, await reader.GetFromJsonAsync<ProcessResponse>(created.Headers.Location));
         Assert.Equal(value, Assert.Single((await reader.GetFromJsonAsync<ProcessResponse[]>($"/orders/processes/{segment}"))!));
@@ -120,16 +124,27 @@ public sealed class OrderCatalogLifecycleHttpTests(OrderDeletionReadinessFixture
         Assert.Equal(2, all.Length);
         Assert.Contains(value, all);
         Assert.Contains(otherProcess, all);
-        using var updated = await writer.PutAsJsonAsync($"/orders/processes/{value.Id}", new UpsertProcessRequest(category.Id, "Updated process"));
+        await using var scope = app.Services.CreateAsyncScope();
+        var database = scope.ServiceProvider.GetRequiredService<OrderDbContext>();
+        Assert.Equal(createdName, (await database.Processes.AsNoTracking().SingleAsync(row => row.Id == value.Id)).Name);
+        var otherBefore = await database.Processes.AsNoTracking().Where(row => row.Id == otherProcess.Id)
+            .Select(row => new { row.Id, row.CategoryId, row.Name, row.CreatedDate, row.ModifiedDate }).SingleAsync();
+        using var updated = await writer.PutAsJsonAsync($"/orders/processes/{value.Id}", new UpsertProcessRequest(category.Id, updatedName));
         Assert.Equal(HttpStatusCode.NoContent, updated.StatusCode);
-        Assert.Equal("Updated process", (await reader.GetFromJsonAsync<ProcessResponse>($"/orders/processes/{value.Id}"))!.Name);
+        var current = (await reader.GetFromJsonAsync<ProcessResponse>($"/orders/processes/{value.Id}"))!;
+        Assert.Equal(updatedName, current.Name);
+        Assert.Equal(category.Id, current.CategoryId);
+        Assert.Equal(value.CreatedDate, current.CreatedDate);
+        Assert.Equal(current, Assert.Single((await reader.GetFromJsonAsync<ProcessResponse[]>($"/orders/processes/{segment}"))!));
+        Assert.Contains(current, (await reader.GetFromJsonAsync<ProcessResponse[]>("/orders/processes"))!);
+        Assert.Equal(updatedName, (await database.Processes.AsNoTracking().SingleAsync(row => row.Id == value.Id)).Name);
         using var deleted = await deleter.DeleteAsync($"/orders/processes/{value.Id}");
         using var missing = await reader.GetAsync($"/orders/processes/{value.Id}");
         Assert.Equal(HttpStatusCode.NoContent, deleted.StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
-        await using var scope = app.Services.CreateAsyncScope();
-        var database = scope.ServiceProvider.GetRequiredService<OrderDbContext>();
         Assert.Equal(otherProcess.Id, Assert.Single(await database.Processes.AsNoTracking().ToArrayAsync()).Id);
+        Assert.Equal(otherBefore, await database.Processes.AsNoTracking().Where(row => row.Id == otherProcess.Id)
+            .Select(row => new { row.Id, row.CategoryId, row.Name, row.CreatedDate, row.ModifiedDate }).SingleAsync());
         Assert.Equal(2, await database.Categories.CountAsync());
     }
 
