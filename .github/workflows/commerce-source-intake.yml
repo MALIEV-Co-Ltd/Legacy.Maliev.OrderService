@@ -1,0 +1,61 @@
+name: Commerce frozen source intake
+on:
+  pull_request:
+    paths: ['eng/commerce-source-intake/**', '.github/workflows/commerce-source-intake.yml']
+  push:
+    branches: [main]
+    paths: ['eng/commerce-source-intake/**', '.github/workflows/commerce-source-intake.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: commerce-source-intake-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  source-intake:
+    if: github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          path: transport
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 4297f695f93f2cb312979b0c0c35bf662e22dd48
+          path: baseline
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.14'
+      - name: Preserve accepted raw Git blob bytes
+        working-directory: baseline
+        run: |
+          python -B -c "from pathlib import Path; Path('.git/info/attributes').write_text('* -text -filter -ident -working-tree-encoding\n', encoding='utf-8')"
+          git -c core.autocrlf=false checkout-index --all --force
+      - name: Compile intake source
+        working-directory: transport
+        run: python -B -c "from pathlib import Path; [compile(p.read_bytes(), str(p), 'exec') for p in Path('eng/commerce-source-intake').glob('*.py')]"
+      - name: Run adapter and actual frozen graph controls
+        working-directory: transport
+        env:
+          COMMERCE_BASELINE: ${{ github.workspace }}/baseline
+        run: python -B -m unittest discover -s eng/commerce-source-intake -v
+      - name: Validate local frozen capsule and assemble source
+        if: github.event_name != 'workflow_dispatch'
+        working-directory: transport
+        run: python -B eng/commerce-source-intake/run_commerce_source_intake_v1.py --baseline ../baseline --owned-root "$RUNNER_TEMP" --local-capsule > "$RUNNER_TEMP/commerce-source-intake.json"
+      - name: Fetch fixed same-repository capsule and assemble source
+        if: github.event_name == 'workflow_dispatch'
+        working-directory: transport
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python -B eng/commerce-source-intake/run_commerce_source_intake_v1.py --baseline ../baseline --owned-root "$RUNNER_TEMP" > "$RUNNER_TEMP/commerce-source-intake.json"
+      - name: Retain source-only receipt
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: commerce-source-intake-${{ github.sha }}
+          path: ${{ runner.temp }}/commerce-source-intake.json
+          if-no-files-found: error
+          retention-days: 7
