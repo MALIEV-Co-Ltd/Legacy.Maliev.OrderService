@@ -220,6 +220,13 @@ public sealed class OrderStatusSourceMigrationTests(OrderDeletionReadinessFixtur
         var context = owned.Context;
         await SeedAsync(context);
         var before = await SnapshotAsync(context);
+        Assert.True(context.Database.CreateExecutionStrategy().RetriesOnFailure);
+        // Observe one actual database lock deadline; production DI retries55P03 as transient.
+        await using var singleAttempt = new OrderStatusDbContext(
+            new DbContextOptionsBuilder<OrderStatusDbContext>()
+                .UseNpgsql(context.Database.GetConnectionString()).Options);
+        singleAttempt.Database.SetCommandTimeout(40);
+        Assert.False(singleAttempt.Database.CreateExecutionStrategy().RetriesOnFailure);
         using var lifetime = new CancellationTokenSource(TimeSpan.FromSeconds(45));
         await using var blocker = new NpgsqlConnection(context.Database.GetConnectionString());
         await blocker.OpenAsync(lifetime.Token);
@@ -229,7 +236,7 @@ public sealed class OrderStatusSourceMigrationTests(OrderDeletionReadinessFixtur
             await using var command = new NpgsqlCommand("LOCK TABLE public.\"OrderStatus\" IN ACCESS EXCLUSIVE MODE", blocker, transaction) { CommandTimeout = 40 };
             await command.ExecuteNonQueryAsync(lifetime.Token);
             var watch = Stopwatch.StartNew();
-            var failure = await Assert.ThrowsAsync<PostgresException>(() => MigrateAsync(context, Target));
+            var failure = await Assert.ThrowsAsync<PostgresException>(() => MigrateAsync(singleAttempt, Target));
             watch.Stop();
             Assert.Equal("55P03", failure.SqlState);
             Assert.InRange(watch.Elapsed, TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(40));
