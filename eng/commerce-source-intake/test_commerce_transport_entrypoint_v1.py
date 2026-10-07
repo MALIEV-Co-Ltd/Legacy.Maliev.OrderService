@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import tempfile
 import unittest
+from datetime import datetime, timezone
 from unittest.mock import patch
 import run_commerce_source_intake_v1 as entry
 
@@ -110,6 +111,66 @@ class EntrypointControls(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'Injected partial'):
                     self.invoke_owned(parent)
             self.assertTrue(json.loads(cleanup_log.getvalue())['resourceCleanup']['removed'])
+            self.assertEqual(b'foreign', sentinel.read_bytes())
+            self.assertEqual(['commerce-source-only'], sorted(path.name for path in parent.iterdir()))
+
+    def test_first_identity_stat_failure_preserves_acquired_directory_and_emits_recovery_evidence(self):
+        original_lstat = Path.lstat
+        with tempfile.TemporaryDirectory() as temporary:
+            parent = Path(temporary)
+            foreign = parent / 'commerce-source-only'
+            foreign.mkdir()
+            sentinel = foreign / 'keep.txt'
+            sentinel.write_bytes(b'foreign')
+            def fail_owned_stat(path, *arguments, **keywords):
+                if path.parent == parent and path.name.startswith('commerce-source-only-'):
+                    raise OSError('Injected first identity stat failure')
+                return original_lstat(path, *arguments, **keywords)
+            cleanup_log = io.StringIO()
+            with patch.object(Path, 'lstat', fail_owned_stat), \
+                    patch.object(entry.shutil, 'rmtree', wraps=entry.shutil.rmtree) as remove, \
+                    patch.object(entry.adapter, 'materialize') as materialize, contextlib.redirect_stderr(cleanup_log):
+                with self.assertRaisesRegex(OSError, 'first identity stat'):
+                    self.invoke_owned(parent)
+                remove.assert_not_called()
+                materialize.assert_not_called()
+            evidence = json.loads(cleanup_log.getvalue())['resourceCleanup']
+            self.assertTrue(evidence['exclusiveCreation'])
+            self.assertTrue(evidence['preserved'])
+            self.assertFalse(evidence['removed'])
+            self.assertEqual('CleanupRequired', evidence['state'])
+            self.assertIsNone(evidence['device'])
+            self.assertIsNone(evidence['inode'])
+            self.assertIsNone(evidence['createdUtc'])
+            self.assertIn('expiresUtc', evidence)
+            acquired = Path(evidence['path'])
+            self.assertEqual(parent, acquired.parent)
+            self.assertTrue(acquired.is_dir())
+            self.assertEqual([], list(acquired.iterdir()))
+            self.assertEqual(b'foreign', sentinel.read_bytes())
+            # The test fixture owns the complete private parent and releases it on exit.
+
+    def test_receipt_setup_failure_after_identity_capture_cleans_only_verified_acquisition(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            parent = Path(temporary)
+            foreign = parent / 'commerce-source-only'
+            foreign.mkdir()
+            sentinel = foreign / 'keep.txt'
+            sentinel.write_bytes(b'foreign')
+            cleanup_log = io.StringIO()
+            with patch.object(entry, 'datetime') as clock, \
+                    patch.object(entry.adapter, 'materialize') as materialize, contextlib.redirect_stderr(cleanup_log):
+                clock.now.side_effect = [datetime.now(timezone.utc), OSError('Injected receipt setup failure')]
+                with self.assertRaisesRegex(OSError, 'receipt setup'):
+                    self.invoke_owned(parent)
+                materialize.assert_not_called()
+            evidence = json.loads(cleanup_log.getvalue())['resourceCleanup']
+            self.assertTrue(evidence['exclusiveCreation'])
+            self.assertTrue(evidence['removed'])
+            self.assertIsNotNone(evidence['device'])
+            self.assertIsNotNone(evidence['inode'])
+            self.assertIsNone(evidence['createdUtc'])
+            self.assertFalse(Path(evidence['path']).exists())
             self.assertEqual(b'foreign', sentinel.read_bytes())
             self.assertEqual(['commerce-source-only'], sorted(path.name for path in parent.iterdir()))
 

@@ -59,25 +59,41 @@ def main():
     else:
         parent = options.owned_root.absolute()
         shared.reject_links(parent)
-        # mkdtemp exclusively creates a private child; an existing target is never adopted.
-        owned = Path(tempfile.mkdtemp(prefix='commerce-source-only-', dir=parent))
-        identity = owned.stat()
-        cleanup = {'owner': adapter.OWNER, 'pid': os.getpid(), 'path': str(owned),
-                   'device': identity.st_dev, 'inode': identity.st_ino,
-                   'createdUtc': datetime.now(timezone.utc).isoformat(),
-                   'expiresUtc': (datetime.now(timezone.utc) + timedelta(seconds=480)).isoformat(),
-                   'persistentData': False, 'exclusiveCreation': True, 'removed': False}
+        prepared = datetime.now(timezone.utc)
+        cleanup = {'owner': adapter.OWNER, 'pid': os.getpid(), 'path': None,
+                   'device': None, 'inode': None, 'createdUtc': None,
+                   'preparedUtc': prepared.isoformat(),
+                   'expiresUtc': (prepared + timedelta(seconds=480)).isoformat(),
+                   'persistentData': False, 'exclusiveCreation': False, 'removed': False}
+        identity = None
+        owned = None
         try:
+            # Capture the acquired path before any fallible identity/receipt setup.
+            acquired = tempfile.mkdtemp(prefix='commerce-source-only-', dir=parent)
+            cleanup['path'] = acquired
+            cleanup['exclusiveCreation'] = True
+            owned = Path(acquired)
+            identity = owned.lstat()
+            cleanup['device'], cleanup['inode'] = identity.st_dev, identity.st_ino
+            cleanup['createdUtc'] = datetime.now(timezone.utc).isoformat()
             result = assemble(owned / 'source')
         finally:
             try:
-                current = owned.lstat()
-                if owned.is_symlink() or (current.st_dev, current.st_ino) != (identity.st_dev, identity.st_ino):
-                    raise ValueError('Owned intake directory identity changed; preserve unknown replacement')
-                shutil.rmtree(owned)
-                cleanup['removed'] = not owned.exists()
-                if not cleanup['removed']:
-                    raise ValueError('Owned intake directory remains after cleanup')
+                if cleanup['exclusiveCreation']:
+                    if identity is None:
+                        cleanup['preserved'] = True
+                        cleanup['state'] = 'CleanupRequired'
+                        cleanup['reason'] = 'Acquired directory identity unavailable; preserve for owner inspection'
+                    else:
+                        current = owned.lstat()
+                        if owned.is_symlink() or (current.st_dev, current.st_ino) != (identity.st_dev, identity.st_ino):
+                            cleanup['preserved'] = True
+                            cleanup['state'] = 'CleanupRequired'
+                            raise ValueError('Owned intake directory identity changed; preserve unknown replacement')
+                        shutil.rmtree(owned)
+                        cleanup['removed'] = not owned.exists()
+                        if not cleanup['removed']:
+                            raise ValueError('Owned intake directory remains after cleanup')
             finally:
                 # Retain actual cleanup evidence even if assembly or cleanup failed.
                 print(json.dumps({'resourceCleanup': cleanup}), file=sys.stderr)
