@@ -74,6 +74,45 @@ class EntrypointControls(unittest.TestCase):
                 self.invoke(destination)
             self.assertFalse(destination.exists())
 
+    def invoke_owned(self, parent):
+        stream = io.StringIO()
+        with patch('sys.argv', ['intake', '--baseline', str(self.baseline),
+                                '--owned-root', str(parent), '--local-capsule']), contextlib.redirect_stdout(stream):
+            entry.main()
+        return json.loads(stream.getvalue())
+
+    def test_owned_workflow_cleanup_preserves_preexisting_foreign_target(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            parent = Path(temporary)
+            foreign = parent / 'commerce-source-only'
+            foreign.mkdir()
+            sentinel = foreign / 'keep.txt'
+            sentinel.write_bytes(b'foreign target must survive workflow cleanup')
+            result = self.invoke_owned(parent)
+            self.assertTrue(result['resourceCleanup']['exclusiveCreation'])
+            self.assertTrue(result['resourceCleanup']['removed'])
+            self.assertEqual(b'foreign target must survive workflow cleanup', sentinel.read_bytes())
+            self.assertEqual(['commerce-source-only'], sorted(path.name for path in parent.iterdir()))
+
+    def test_owned_workflow_removes_only_its_partial_failed_assembly(self):
+        def fail(shared, destination, *arguments):
+            destination.mkdir()
+            (destination / 'partial.txt').write_bytes(b'partial task-owned assembly')
+            raise ValueError('Injected partial assembly failure')
+        with tempfile.TemporaryDirectory() as temporary:
+            parent = Path(temporary)
+            foreign = parent / 'commerce-source-only'
+            foreign.mkdir()
+            sentinel = foreign / 'keep.txt'
+            sentinel.write_bytes(b'foreign')
+            cleanup_log = io.StringIO()
+            with patch.object(entry.adapter, 'materialize', side_effect=fail), contextlib.redirect_stderr(cleanup_log):
+                with self.assertRaisesRegex(ValueError, 'Injected partial'):
+                    self.invoke_owned(parent)
+            self.assertTrue(json.loads(cleanup_log.getvalue())['resourceCleanup']['removed'])
+            self.assertEqual(b'foreign', sentinel.read_bytes())
+            self.assertEqual(['commerce-source-only'], sorted(path.name for path in parent.iterdir()))
+
 
 if __name__ == '__main__':
     unittest.main()

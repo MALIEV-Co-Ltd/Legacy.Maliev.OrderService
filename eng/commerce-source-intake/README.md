@@ -13,8 +13,16 @@ Docker proxy boundary before build, focused/full tests, coverage, audit and clea
 
 Set `COMMERCE_BASELINE` to an accepted-base checkout with exact raw policy bytes, then
 run `python -B -m unittest discover -s eng/commerce-source-intake`. The workflow
-checks out the fixed accepted base separately and supplies this path. Four entrypoint
+checks out the fixed accepted base separately and supplies this path. Six entrypoint
 controls verify the actual capsule graph, source-only receipt and refusal boundaries.
 The workflow validates local capsule bytes on pull requests. On protected main,
 manual dispatch fetches the exact same-repository Git blob instead. Both lanes
 report source assembly only. No policy, capsule OID, lane or producer runtime override exists.
+
+The disposable baseline checkout uses its own highest-precedence info attributes
+to disable Git checkout transformations, then reprojects its accepted index.
+Every baseline file still has to match its policy raw byte size and SHA256.
+The workflow uses `--owned-root` to acquire a unique private directory exclusively.
+Cleanup verifies that directory's device/inode identity and removes only that
+owned directory, including partial failed assembly. Pre-existing targets remain
+untouched. The receipt records actual removal; an identity change fails closed.
