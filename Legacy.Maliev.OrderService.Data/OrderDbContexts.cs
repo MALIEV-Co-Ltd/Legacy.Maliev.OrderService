@@ -34,7 +34,13 @@ public sealed class OrderStatusDbContext(DbContextOptions<OrderStatusDbContext> 
     public DbSet<OrderStatus> Statuses => Set<OrderStatus>(); public DbSet<OrderStatusTransition> Transitions => Set<OrderStatusTransition>(); public DbSet<OrderStatusHistory> History => Set<OrderStatusHistory>();
     protected override void OnModelCreating(ModelBuilder b)
     {
-        var s = b.Entity<OrderStatus>(); s.ToTable("OrderStatus"); s.HasKey(x => x.Id); s.Property(x => x.Id).HasColumnName("ID").ValueGeneratedOnAdd(); s.Property(x => x.Name).HasMaxLength(50); Dates(s);
+        var s = b.Entity<OrderStatus>(); s.ToTable("OrderStatus"); s.HasKey(x => x.Id); s.Property(x => x.Id).HasColumnName("ID").ValueGeneratedOnAdd(); s.Property(x => x.Name).IsRequired().HasMaxLength(50).HasColumnType("text"); s.Property(x => x.Description).HasMaxLength(100).HasColumnType("text");
+        s.ToTable("OrderStatus", table =>
+        {
+            table.HasCheckConstraint("CK_OrderStatus_Name_SourceLength", OrderStatusSourceConstraints.NameLengthSql);
+            table.HasCheckConstraint("CK_OrderStatus_Description_SourceLength", OrderStatusSourceConstraints.DescriptionLengthSql);
+        });
+        Dates(s);
         var t = b.Entity<OrderStatusTransition>(); t.ToTable("OrderStatusHasPossibleStatus"); t.HasKey(x => x.Id); t.Property(x => x.Id).HasColumnName("ID").ValueGeneratedOnAdd(); t.Property(x => x.OrderStatusId).HasColumnName("OrderStatusID"); t.Property(x => x.PossibleStatusId).HasColumnName("PossibleStatusID"); Dates(t); t.HasOne(x => x.OrderStatus).WithMany(x => x.FromTransitions).HasForeignKey(x => x.OrderStatusId).OnDelete(DeleteBehavior.NoAction).HasConstraintName("FK_OrderStatusHasPossibleStatus_OrderStatus"); t.HasOne(x => x.PossibleStatus).WithMany(x => x.ToTransitions).HasForeignKey(x => x.PossibleStatusId).OnDelete(DeleteBehavior.NoAction).HasConstraintName("FK_OrderStatusHasPossibleStatus_OrderStatus1");
         var h = b.Entity<OrderStatusHistory>(); h.ToTable("OrderStatusHistory"); h.HasKey(x => x.Id); h.Property(x => x.Id).HasColumnName("ID").ValueGeneratedOnAdd(); h.Property(x => x.OrderId).HasColumnName("OrderID"); h.Property(x => x.OrderStatusId).HasColumnName("OrderStatusID"); Dates(h); h.Property(x => x.ModifiedDate).IsConcurrencyToken(); h.HasOne(x => x.OrderStatus).WithMany(x => x.History).HasForeignKey(x => x.OrderStatusId).OnDelete(DeleteBehavior.NoAction).HasConstraintName("FK_OrderHasOrderStatus_OrderStatus");
     }

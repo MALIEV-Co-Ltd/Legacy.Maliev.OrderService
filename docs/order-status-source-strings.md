@@ -1,0 +1,7 @@
+# OrderStatus source strings
+
+The owned source checkpoint135e526d0dab85c415b3afdcefd7b70fe2c82e2f requires OrderStatus.Name (nvarchar50) and bounds nullable Description at100 UTF16 units. Preserve null-only requiredness, empty and padded values, and unchanged JSON properties. Repository create validates before writes; update first retains missing-row404, then validates before mutations. Authentication and permission remain earlier boundaries.
+
+PostgreSQL text plus UTF16 checks preserve supplementary-character and trailing-space limits. The additive migration locks only OrderStatus with5s acquisition/30s statement bounds, verifies exact nullablevarchar50/text preimage, rejects NULL/overflow/check collisions, and refuses more than10000 rows. It does no DML or startup migration activation. Down refuses missing/wrong owned constraints before restoring the nullablevarchar50 preimage; retained values and unrelated constraints remain.
+
+Expected new meaningful cases are24 realHTTP and26 model/disposablePostgreSQL,50 focused and374 full including all prior324 cases. These are forecasts until actual native artifacts pass. Hosted-first validation requires build0warnings/errors, focused/full originalTRX identities, generated-inclusive raw coverage>=80 for all4assemblies without exclusions, formatting/audit/security, normal exact-head merge and fresh-main checks. No native or persistentDDL is authorized by this document.
