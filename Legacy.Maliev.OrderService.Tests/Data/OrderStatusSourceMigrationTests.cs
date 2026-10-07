@@ -236,7 +236,8 @@ public sealed class OrderStatusSourceMigrationTests(OrderDeletionReadinessFixtur
             await using var command = new NpgsqlCommand("LOCK TABLE public.\"OrderStatus\" IN ACCESS EXCLUSIVE MODE", blocker, transaction) { CommandTimeout = 40 };
             await command.ExecuteNonQueryAsync(lifetime.Token);
             var watch = Stopwatch.StartNew();
-            var failure = await Assert.ThrowsAsync<PostgresException>(() => MigrateAsync(singleAttempt, Target));
+            var wrapper = await Assert.ThrowsAsync<InvalidOperationException>(() => MigrateAsync(singleAttempt, Target));
+            var failure = Assert.IsType<PostgresException>(wrapper.InnerException);
             watch.Stop();
             Assert.Equal("55P03", failure.SqlState);
             Assert.InRange(watch.Elapsed, TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(40));
