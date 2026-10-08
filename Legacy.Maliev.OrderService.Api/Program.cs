@@ -2,6 +2,7 @@ using System.Text.Json.Serialization;
 using Legacy.Maliev.OrderService.Api;
 using Legacy.Maliev.OrderService.Application.Interfaces;
 using Legacy.Maliev.OrderService.Data;
+using Legacy.Maliev.OrderService.Api.Replacement;
 using Maliev.Aspire.ServiceDefaults;
 // These registrations do not activate recovery; both admission options remain default-off.
 static void AddDeletionRecovery(IServiceCollection services)
@@ -19,4 +20,5 @@ b.Services.ConfigureHttpJsonOptions(o =>
 });
 // Register in this assembly so its generated XML contract support is activated.
 b.Services.AddOpenApi("v1");
+b.Services.AddReplacementCases();
 b.Services.AddSingleton(TimeProvider.System); b.Services.AddScoped<DistributedOrderCache>(); b.Services.AddScoped<IOrderCache>(p => p.GetRequiredService<DistributedOrderCache>()); b.Services.AddScoped<IIdempotencyStore>(p => p.GetRequiredService<DistributedOrderCache>()); b.Services.AddScoped<IOrderService, OrderRepository>(); b.Services.AddOptions<OrderDeletionRecoveryOptions>().BindConfiguration("OrderDeletionRecovery"); b.Services.AddScoped<OrderDeletionAdmissionFilter>(); b.Services.AddHealthChecks().AddCheck<OrderDeletionReadinessHealthCheck>("order-deletion-schema", tags: ["ready"]); AddDeletionRecovery(b.Services); var app = b.Build(); app.UseStandardMiddleware(); app.UseCors(); app.UseAuthentication(); app.UseAuthorization(); app.MapDefaultEndpoints("order"); app.MapControllers(); app.MapApiDocumentation(servicePrefix: "order"); await app.RunAsync(); public partial class Program;

@@ -59,10 +59,15 @@ public sealed class OrderOpenApiHttpContractTests(OrderDeletionReadinessFixture 
         foreach (var probe in probes)
             Assert.NotNull(Path(document, probe)["get"]);
         var operations = document["paths"]!.AsObject()
-            .Where(path => !probes.Contains(path.Key, StringComparer.OrdinalIgnoreCase))
+            .Where(path => !probes.Contains(path.Key, StringComparer.OrdinalIgnoreCase)
+                && !path.Key.StartsWith("/replacementcases", StringComparison.OrdinalIgnoreCase))
             .SelectMany(path => path.Value!.AsObject())
             .Where(entry => entry.Key is "get" or "post" or "put" or "delete" or "patch").ToArray();
         Assert.Equal(58, operations.Length);
+        var replacementOperations = document["paths"]!.AsObject()
+            .Where(path => path.Key.StartsWith("/replacementcases", StringComparison.OrdinalIgnoreCase))
+            .SelectMany(path => path.Value!.AsObject()).Where(entry => entry.Key is "get" or "post" or "put" or "delete" or "patch").ToArray();
+        Assert.Equal(7, replacementOperations.Length);
         Assert.All(operations, operation => Assert.NotEmpty(operation.Value!["responses"]!.AsObject()));
         foreach (var name in new[] { "sort", "search", "index", "size" })
         {

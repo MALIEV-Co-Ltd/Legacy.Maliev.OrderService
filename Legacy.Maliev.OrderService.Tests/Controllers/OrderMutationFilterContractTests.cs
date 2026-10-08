@@ -2,6 +2,7 @@ using System.Reflection;
 using Legacy.Maliev.OrderService.Api;
 using Legacy.Maliev.OrderService.Api.Controllers;
 using Microsoft.AspNetCore.Mvc;
+using Maliev.Aspire.ServiceDefaults.Authorization;
 
 namespace Legacy.Maliev.OrderService.Tests.Controllers;
 
@@ -10,7 +11,7 @@ public sealed class OrderMutationFilterContractTests
     [Fact]
     public void UnavailableFilter_IsOnExactlyTheFencedMutationActions_NotReadsOrCatalogWrites()
     {
-        var actions = typeof(OrdersController).Assembly.GetTypes().Where(x => typeof(ControllerBase).IsAssignableFrom(x))
+        var actions = typeof(OrdersController).Assembly.GetTypes().Where(x => typeof(ControllerBase).IsAssignableFrom(x) && x != typeof(ReplacementCasesController))
             .SelectMany(x => x.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly))
             .Where(x => x.GetCustomAttributes().Any(a => a is Microsoft.AspNetCore.Mvc.Routing.HttpMethodAttribute)).ToArray();
         Assert.Equal(58, actions.Length);
@@ -27,7 +28,7 @@ public sealed class OrderMutationFilterContractTests
     [Fact]
     public void LifetimeConflictFilter_IsOnExactlyLifetimeAwareActions_NotCatalogOrCreate()
     {
-        var actions = typeof(OrdersController).Assembly.GetTypes().Where(x => typeof(ControllerBase).IsAssignableFrom(x))
+        var actions = typeof(OrdersController).Assembly.GetTypes().Where(x => typeof(ControllerBase).IsAssignableFrom(x) && x != typeof(ReplacementCasesController))
             .SelectMany(x => x.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly))
             .Where(x => x.GetCustomAttributes().Any(a => a is Microsoft.AspNetCore.Mvc.Routing.HttpMethodAttribute)).ToArray();
         Assert.Equal(58, actions.Length);
@@ -39,4 +40,21 @@ public sealed class OrderMutationFilterContractTests
         }
         Assert.Equal(31, actions.Count(x => x.GetCustomAttributes().Any(a => a.GetType().Name == "OrderLifetimeConflictAttribute")));
     }
+    [Fact]
+    public void ReplacementActions_RequireCasePermissionAndHaveNoLegacyOrderMutationFilter()
+    {
+        var actions = typeof(ReplacementCasesController).GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+            .Where(x => x.GetCustomAttributes().Any(a => a is Microsoft.AspNetCore.Mvc.Routing.HttpMethodAttribute)).ToArray();
+        Assert.Equal(7, actions.Length);
+        foreach (var action in actions)
+        {
+            Assert.Null(action.GetCustomAttribute<OrderMutationUnavailableAttribute>());
+            Assert.DoesNotContain(action.GetCustomAttributes(), a => a.GetType().Name == "OrderLifetimeConflictAttribute");
+            var permission = Assert.Single(action.GetCustomAttributes<RequirePermissionAttribute>());
+            Assert.True(permission.RequireLiveCheck);
+            Assert.Contains(permission.Permission, new[] { "legacy.replacements.read", "legacy.replacements.write", "legacy.replacements.approve" });
+            Assert.Equal(action.GetCustomAttributes<Microsoft.AspNetCore.Mvc.Routing.HttpMethodAttribute>().Any(x => x.HttpMethods.Contains("POST")), permission.IsCritical);
+        }
+    }
+
 }
