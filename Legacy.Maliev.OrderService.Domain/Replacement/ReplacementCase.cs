@@ -33,6 +33,7 @@ public sealed class ReplacementCase
     public IReadOnlyList<ReplacementReturn> Returns { get; }
     public IReadOnlyList<ReplacementWaiver> Waivers { get; }
     public IReadOnlyList<ReplacementAudit> Audit { get; }
+    public IReadOnlyList<ReplacementRecoveryFact> RecoveryFacts { get; }
     public ReturnDecision? ReturnDecision { get; }
     public bool BlockProductionUntilReturn { get; }
     public bool BlockShipmentUntilReturn { get; }
@@ -41,13 +42,14 @@ public sealed class ReplacementCase
         IEnumerable<ReplacementOriginal> originals, IEnumerable<ReplacementAttempt> attempts,
         IEnumerable<ReplacementShipment> shipments, IEnumerable<ReplacementReturn> returns,
         IEnumerable<ReplacementAudit> audit, ReturnDecision? returnDecision, bool blockProduction, bool blockShipment,
-        IEnumerable<ReplacementWaiver>? waivers = null)
+        IEnumerable<ReplacementWaiver>? waivers = null, IEnumerable<ReplacementRecoveryFact>? recoveryFacts = null)
     {
         CustomerId = customerId; Reason = reason; State = state; ReportEvidence = report;
         Originals = Array.AsReadOnly(originals.ToArray()); Attempts = Array.AsReadOnly(attempts.ToArray());
         Shipments = Array.AsReadOnly(shipments.ToArray()); Returns = Array.AsReadOnly(returns.ToArray());
         Audit = Array.AsReadOnly(audit.ToArray()); Revision = Audit.Count;
         Waivers = Array.AsReadOnly((waivers ?? []).ToArray());
+        RecoveryFacts = Array.AsReadOnly((recoveryFacts ?? []).ToArray());
         ReturnDecision = returnDecision; BlockProductionUntilReturn = blockProduction; BlockShipmentUntilReturn = blockShipment;
     }
 
@@ -202,11 +204,32 @@ public sealed class ReplacementCase
         return Next("Closed", "Remedy delivered", employeeId, now, state: ReplacementState.Closed);
     }
 
+    public ReplacementCase RecordRecoveryFact(int orderId, RecoveryFactKind kind, decimal amount, string currency,
+        DateOnly observedDate, string description, ReplacementEvidence evidence, string? claimReference, int? correctsFactId,
+        int employeeId, DateTimeOffset now)
+    {
+        Require(State is ReplacementState.Approved or ReplacementState.Closed, "Recovery facts require an approved case.");
+        var original = Original(orderId); ValidateEvidence(evidence); Text(description, 2000);
+        Require(Enum.IsDefined(kind) && amount >= 0 && amount <= 9999999999999999.99m && decimal.Round(amount, 2) == amount, "Invalid observed amount or kind.");
+        Require(currency is { Length: 3 } && currency.All(c => c is >= 'A' and <= 'Z'), "Require an explicit uppercase three-letter currency.");
+        Require(observedDate != default && observedDate <= DateOnly.FromDateTime(now.UtcDateTime), "Invalid observation date.");
+        if (kind == RecoveryFactKind.Cost) Require(claimReference is null, "A cost is separate from carrier claim observations.");
+        else Text(claimReference!, 250);
+        if (correctsFactId is { } correctedId)
+        {
+            var prior = RecoveryFacts.SingleOrDefault(x => x.Id == correctedId);
+            Require(prior is not null && prior.OrderId == orderId && prior.Kind == kind && prior.Currency == currency && prior.ClaimReference == claimReference, "Correction must preserve the observed fact identity.");
+            Require(!RecoveryFacts.Any(x => x.CorrectsFactId == correctedId), "Correct the latest fact; correction forks are forbidden.");
+        }
+        var fact = new ReplacementRecoveryFact(checked(RecoveryFacts.Count + 1), orderId, kind, amount, currency, observedDate, description, evidence, claimReference, correctsFactId, original.QuotationId, original.InvoiceId);
+        return Next("RecoveryFactRecorded", description, employeeId, now, recoveryFacts: RecoveryFacts.Append(fact));
+    }
+
     private ReplacementCase Next(string action, string reason, int employeeId, DateTimeOffset now,
         ReplacementState? state = null, IEnumerable<ReplacementAttempt>? attempts = null,
         IEnumerable<ReplacementShipment>? shipments = null, IEnumerable<ReplacementReturn>? returns = null,
         ReturnDecision? returnDecision = null, bool? blockProduction = null, bool? blockShipment = null,
-        IEnumerable<ReplacementWaiver>? waivers = null)
+        IEnumerable<ReplacementWaiver>? waivers = null, IEnumerable<ReplacementRecoveryFact>? recoveryFacts = null)
     {
         ValidateActor(employeeId, now); Text(reason, 2000);
         Require(now >= Audit[^1].OccurredAt, "Command time precedes case history.");
@@ -214,7 +237,7 @@ public sealed class ReplacementCase
             shipments ?? Shipments, returns ?? Returns,
             Audit.Append(new(checked(Revision + 1), action, employeeId, now, reason)),
             returnDecision ?? ReturnDecision, blockProduction ?? BlockProductionUntilReturn, blockShipment ?? BlockShipmentUntilReturn,
-            waivers ?? Waivers);
+            waivers ?? Waivers, recoveryFacts ?? RecoveryFacts);
     }
 
     private ReplacementOriginal Original(int id) => Originals.SingleOrDefault(x => x.OrderId == id) ?? throw new ReplacementRuleException("Order is not affected by this case.");

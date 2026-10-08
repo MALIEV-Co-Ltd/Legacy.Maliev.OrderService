@@ -1,10 +1,11 @@
 using System.Net;
 using System.Text.Json;
+using Legacy.Maliev.OrderService.Application.Replacement;
 using Legacy.Maliev.OrderService.Domain.Replacement;
 
 namespace Legacy.Maliev.OrderService.Data.Replacement;
 
-public sealed class ReplacementEvidenceUnavailableException : Exception;
+public sealed class ReplacementEvidenceUnavailableException : ReplacementUnavailableException;
 /// <summary>Frozen FileService receipt read DTO; does not own document storage, verification or access policy.</summary>
 public sealed record ReplacementEvidenceReceipt(Guid DocumentId, Guid VersionId, int CustomerId, string Kind,
     string ContentSha256, int? QuotationId, IReadOnlyList<int> OrderIds, string VerificationStatus,
@@ -12,8 +13,13 @@ public sealed record ReplacementEvidenceReceipt(Guid DocumentId, Guid VersionId,
 
 /// <summary>Consumes current exact-version receipt authority. Not registered until the shared producer is accepted.
 /// The configured authenticated client must carry current staff/tenant authority and scoped permissions.</summary>
-public sealed class ReplacementEvidenceClient(HttpClient client)
+public sealed class ReplacementEvidenceClient(HttpClient client) : IReplacementEvidenceVerifier
 {
+    public async Task RequireAsync(int customerId, IReadOnlyList<int> ids, ReplacementEvidence reference, string kind, CancellationToken token)
+    {
+        if (client.BaseAddress is null) throw new ReplacementEvidenceUnavailableException();
+        _ = await VerifyAsync(customerId, ids, reference, kind, token);
+    }
     public async Task<ReplacementEvidenceReceipt> VerifyAsync(int customerId, IReadOnlyList<int> originalOrderIds,
         ReplacementEvidence reference, string requiredKind, CancellationToken token)
     {

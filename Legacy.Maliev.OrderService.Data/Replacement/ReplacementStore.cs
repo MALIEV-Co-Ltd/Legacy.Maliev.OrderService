@@ -3,17 +3,18 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Legacy.Maliev.OrderService.Application.Replacement;
 using Legacy.Maliev.OrderService.Domain;
 using Legacy.Maliev.OrderService.Domain.Replacement;
 using Microsoft.EntityFrameworkCore;
 
 namespace Legacy.Maliev.OrderService.Data.Replacement;
 
-public sealed class ReplacementStoreConflictException(string message) : Exception(message);
-public sealed class ReplacementStoreNotFoundException : Exception;
+public sealed class ReplacementStoreConflictException(string message, bool revisionRejected = false) : ReplacementConflictException(message, revisionRejected);
+public sealed class ReplacementStoreNotFoundException : ReplacementNotFoundException;
 /// <summary>Atomic case command storage in the Order database. The application must provide current authority and
 /// verify protected evidence before calling; this component never writes an Order, invoice or status.</summary>
-public sealed class ReplacementStore(Func<DbContext> contexts)
+public sealed class ReplacementStore(Func<DbContext> contexts) : IReplacementRepository
 {
     public async Task<ReplacementStoredCase> CreateAsync(int customerId, ReplacementReason reason,
         IReadOnlyList<ReplacementAffectedInput> affected, ReplacementEvidence evidence, int employeeId,
@@ -40,6 +41,16 @@ public sealed class ReplacementStore(Func<DbContext> contexts)
             var orders = await db.Set<Order>().AsNoTracking().Where(x => ids.Contains(x.Id)).ToListAsync(cancellationToken);
             if (orders.Count != ids.Length || orders.Any(x => x.CustomerId != customerId))
                 throw new ReplacementRuleException("Original orders are missing or belong to another customer.");
+            var existingIds = db.Set<ReplacementAffectedRow>().Where(x => ids.Contains(x.OrderId)).Select(x => x.CaseId);
+            var existingRows = await db.Set<ReplacementCaseRow>().AsNoTracking().Where(x => existingIds.Contains(x.Id)).ToListAsync(cancellationToken);
+            var openCases = existingRows.Select(x => Rehydrate(x, x.Revision))
+                .Where(x => x.State is ReplacementState.Reported or ReplacementState.Approved).ToArray();
+            foreach (var input in affected)
+            {
+                var reserved = openCases.SelectMany(x => x.Originals).Where(x => x.OrderId == input.OrderId).Sum(x => (long)x.AffectedQuantity);
+                if (reserved + input.Quantity > orders.Single(x => x.Id == input.OrderId).Manufactured)
+                    throw new ReplacementRuleException("Original demand is already covered by an open replacement case; use its next attempt.");
+            }
             var originals = affected.Select(input =>
             {
                 var order = orders.Single(x => x.Id == input.OrderId);
@@ -76,11 +87,20 @@ public sealed class ReplacementStore(Func<DbContext> contexts)
             await LockOperationAsync(db, employeeId, operationId, cancellationToken);
             var replay = await ReplayAsync(db, employeeId, operationId, hash, cancellationToken);
             if (replay is not null) return replay;
+            var hint = await db.Set<ReplacementCaseRow>().AsNoTracking().SingleOrDefaultAsync(x => x.Id == caseId, cancellationToken)
+                ?? throw new ReplacementStoreNotFoundException();
+            var hinted = Rehydrate(hint, hint.Revision);
+            foreach (var id in hinted.Originals.Select(x => x.OrderId).Order())
+            {
+                var lifetime = $"legacy-order-lifetime\n{id.ToString(CultureInfo.InvariantCulture)}";
+                await db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtextextended({lifetime}, 0))", cancellationToken);
+            }
             await db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(2147483100, {caseId})", cancellationToken);
             var row = await db.Set<ReplacementCaseRow>().SingleOrDefaultAsync(x => x.Id == caseId, cancellationToken)
                 ?? throw new ReplacementStoreNotFoundException();
-            if (row.Revision != expectedRevision) throw new ReplacementStoreConflictException("Case revision changed.");
+            if (row.Revision != expectedRevision) throw new ReplacementStoreConflictException("Case revision changed.", true);
             var current = Rehydrate(row, row.Revision);
+            if (!await MatchAsync(db, current, cancellationToken)) throw new ReplacementDeniedException();
             var next = command.Apply(current, employeeId, now);
             var facts = ReadFacts(row).Append(new(command, employeeId, now)).ToArray();
             row.CommandsJson = JsonSerializer.Serialize(facts); row.Revision = next.Revision;
@@ -95,6 +115,39 @@ public sealed class ReplacementStore(Func<DbContext> contexts)
         await using var db = contexts();
         var row = await db.Set<ReplacementCaseRow>().AsNoTracking().SingleOrDefaultAsync(x => x.Id == caseId, cancellationToken);
         return row is null ? null : new(row.Id, Rehydrate(row, row.Revision));
+    }
+
+    public async Task<bool> OriginalsMatchAsync(ReplacementCase value, CancellationToken c)
+    {
+        await using var db = contexts(); return await MatchAsync(db, value, c);
+    }
+    public async Task<ReplacementStoredCase?> GetOperationAsync(int employeeId, Guid operationId, CancellationToken c)
+    {
+        await using var db = contexts();
+        var receipt = await db.Set<ReplacementOperationRow>().AsNoTracking().SingleOrDefaultAsync(x => x.EmployeeId == employeeId && x.OperationId == operationId, c);
+        if (receipt is null) return null;
+        var row = await db.Set<ReplacementCaseRow>().AsNoTracking().SingleAsync(x => x.Id == receipt.CaseId, c);
+        return new(row.Id, Rehydrate(row, receipt.ResultRevision));
+    }
+    public async Task<bool> OriginalOrderMatchesAsync(int customerId, int orderId, CancellationToken c)
+    {
+        await using var db = contexts();
+        return customerId > 0 && orderId > 0 && !await db.Set<OrderDeletionIntent>().AnyAsync(x => x.OrderId == orderId, c)
+            && await db.Set<Order>().AnyAsync(x => x.Id == orderId && x.CustomerId == customerId, c);
+    }
+    public async Task<IReadOnlyList<ReplacementStoredCase>> ListAsync(int customerId, int orderId, CancellationToken c)
+    {
+        await using var db = contexts();
+        var ids = db.Set<ReplacementAffectedRow>().Where(x => x.OrderId == orderId).Select(x => x.CaseId);
+        var rows = await db.Set<ReplacementCaseRow>().AsNoTracking().Where(x => x.CustomerId == customerId && ids.Contains(x.Id)).OrderByDescending(x => x.Id).Take(101).ToListAsync(c);
+        if (rows.Count > 100) throw new ReplacementUnavailableException();
+        return Array.AsReadOnly(rows.Select(x => new ReplacementStoredCase(x.Id, Rehydrate(x, x.Revision))).ToArray());
+    }
+    private static async Task<bool> MatchAsync(DbContext db, ReplacementCase value, CancellationToken c)
+    {
+        var ids = value.Originals.Select(x => x.OrderId).ToArray();
+        return !await db.Set<OrderDeletionIntent>().AnyAsync(x => ids.Contains(x.OrderId), c)
+            && await db.Set<Order>().CountAsync(x => ids.Contains(x.Id) && x.CustomerId == value.CustomerId, c) == ids.Length;
     }
 
     private async Task<ReplacementStoredCase> TransactionAsync(Func<DbContext, Task<ReplacementStoredCase>> action, CancellationToken cancellationToken)
@@ -119,7 +172,16 @@ public sealed class ReplacementStore(Func<DbContext> contexts)
         if (!CryptographicOperations.FixedTimeEquals(Encoding.ASCII.GetBytes(receipt.PayloadHash), Encoding.ASCII.GetBytes(hash)))
             throw new ReplacementStoreConflictException("Operation identity was already used for another request.");
         var row = await db.Set<ReplacementCaseRow>().AsNoTracking().SingleAsync(x => x.Id == receipt.CaseId, cancellationToken);
-        return new(row.Id, Rehydrate(row, receipt.ResultRevision));
+        var value = Rehydrate(row, receipt.ResultRevision);
+        // A replay is still a current protected read. Evidence verification may have yielded
+        // since the application checked ownership; fence every immutable original again.
+        foreach (var id in value.Originals.Select(x => x.OrderId).Order())
+        {
+            var lifetime = $"legacy-order-lifetime\n{id.ToString(CultureInfo.InvariantCulture)}";
+            await db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtextextended({lifetime}, 0))", cancellationToken);
+        }
+        if (!await MatchAsync(db, value, cancellationToken)) throw new ReplacementDeniedException();
+        return new(row.Id, value);
     }
 
     private static ReplacementCase Rehydrate(ReplacementCaseRow row, int revision)

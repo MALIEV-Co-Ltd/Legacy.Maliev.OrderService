@@ -24,34 +24,38 @@
 ### Task1: Domain lifecycle and quantity rules
 Files: Domain/Replacement/ReplacementCase.cs; Tests/Replacement/ReplacementCaseTests.cs.
 Produces: ReplacementCase.Create(int customerId,ReplacementReason reason,IReadOnlyList<ReplacementOriginal> originals); Approve(...); StartAttempt(...); CompleteQa(...); Ship(...); ConfirmDelivery(...); RecordReturn(...); Close(...). All use explicit actor/time/evidence stable references; records/read-only snapshots protect history.
-- [ ] Write domain tests for three damaged parts and one mold, return gates, partialQA/new attempt, shipped caps, failed-delivery retry, closure/claim independence, wrongcustomer/negative/overflow inputs.
-- [ ] Run filtered tests and retain missing-feature RED.
-- [ ] Implement exact lifecycle and checked demand caps; audit all decisions; keep original snapshots.
-- [ ] Run filtered tests and commit only after green.
+- [x] Write domain tests for three damaged parts and one mold, return gates, partialQA/new attempt, shipped caps, failed-delivery retry, closure/claim independence, wrongcustomer/negative/overflow inputs.
+- [x] Run filtered tests and retain missing-feature RED.
+- [x] Implement exact lifecycle and checked demand caps; audit all decisions; keep original snapshots.
+- [x] Run filtered tests and commit only after green.
 
 ### Task2: Durable persistence and owner lineage
 Files: Data/Replacement/ReplacementModelConfiguration.cs, ReplacementStore.cs; Domain/Replacement/ReplacementPersistence.cs; Tests/Replacement/ReplacementStoreTests.cs; existing OrderDbContexts.cs + migration/snapshot ONLY after narrow owner coordination.
 Consumes Task1 aggregate. Produces store CreateAsync/ExecuteAsync/GetAsync with actor-scoped operation GUID, canonicalpayload SHA256, ExpectedRevision, transaction and durable receipt. GET lineage projects persisted exact customer/IDs/revision.
-- [ ] Write PG18 tests for concurrent attempt cap, lostack replay/alteredpayload conflict, rollback, current exact customerread, originalrows unchanged.
-- [ ] Observe RED then implement serialized case command/version/audit/receipt; generate additive migration and inspect SQL against owned context handoff.
-- [ ] PG18 tests green; schema forward and legacy model tests; commit.
+- [x] Write PG18 tests for concurrent attempt cap, lostack replay/alteredpayload conflict, rollback, current exact customerread, originalrows unchanged.
+- [x] Observe RED then implement serialized case command/version/audit/receipt; generate additive migration and inspect SQL against owned context handoff.
+- [x] PG18 tests green; schema forward and legacy model tests; commit.
 
 ### Task3: Protected case API and shared evidence consumer
 Files: Application/Replacement/ReplacementContracts.cs, ReplacementService.cs, ReplacementEvidenceClient.cs; Api/Controllers/ReplacementCasesController.cs; new Api/ReplacementRegistration.cs + minimal Program registration after owner coordination; Tests/Replacement/ReplacementHttpTests.cs.
 Produces /replacementcases create/read/lineage plus typed lifecyclecommands. New permissions legacy.replacements.read/write/approve with /replacementcases/{caseId}; approval critical live checks. Missing404, denial403, version/idempotency409, invalid400, dependencies503. Same actor currentauthority; unavailable shared module failclosed.
-- [ ] Tests for unauthorized/denied/stale/mixedcustomer, frozen PascalCase receipt, exact lineage/documentversion checks and no finance/notification side effects.
+- [x] Tests for unauthorized/denied/stale/mixedcustomer, frozen PascalCase receipt, exact lineage/documentversion checks and no finance/notification side effects.
 - [ ] RED then implement producer adapters using acceptedownerpins; defaultoff until accepted producer available.
 - [ ] Full API/route/OpenAPI/permission tests and actual PG HTTP command replay; commit.
 
 ### Task4: Intranet replacement workflow
 Files: new Contracts/ReplacementContracts.cs; Bff/Orders/ReplacementProxies.cs; Client.Features.Orders/Components/ReplacementPanel.razor; minimal endpoint/page registrations coordinated with Intranetowner; Tests/ReplacementWorkflowTests.cs.
 Consumes Task3 ownerproducer/Task2 lineage only. UI preserves originalsummary, separate case/attempttimeline, approval/return/production/QA/shipping and privateevidence selection; original fieldedit never sends replacement quantities.
-- [ ] UI/BFF tests correctcustomer exactIDs, privateevidence producerunavailable, partial/multipleattempts and recoverytimeline; English/Thai keyboard/error/retry flow.
-- [ ] RED then implement BFF CSRF/sessionauthority/commands and component.
+- [x] UI/BFF tests correctcustomer exactIDs, privateevidence producerunavailable, partial/multipleattempts and recoverytimeline; English/Thai keyboard/error/retry flow.
+- [x] RED then implement BFF CSRF/sessionauthority/commands and component.
 - [ ] Native/browser tests plus full affected suite and producerintegration; commit.
 
 ### Task5: Operational costs/claims and final acceptance
 Files: Domain/Replacement/ReplacementFinancialReferences.cs and focused tests; service/API/UI add explicit commands. Costs/claim facts record exactcurrency/amount/date and originalinvoice/quote; optional billingOperationId only from acknowledgedproducer. No credit/tax/payment APIs invoked automatically.
-- [ ] Test remedyclosure while claimpending, immutablecorrection, refund/credit separation and nonnegative currency amounts.
+- [x] Test remedyclosure while claimpending, immutablecorrection, refund/credit separation and nonnegative currency amounts.
 - [ ] Implement records; green focused and affectedfull, Release0warnings/errors, format,vulnerability,gitleaks.
 - [ ] Fresh wholebranch reviewer; meaningful findings get regression-first fix; PR + exactheadCI and post-main checks; issue remainsopen until delivered. No productionactivation.
+
+## Current acceptance checkpoint
+
+Foundation domain/persistence is committed in Order PR62. API/service, cost/claim observations, Intranet BFF/UI and retained review regressions are implemented locally. Actual PostgreSQL HTTP lost-ack test passed with controlled authority/evidence; this is not a live producer fixture. Task3 accepted Auth/File adapter and Task4 producer integration remain blocked; defaults are off. Remaining full-suite/coverage/post-style browser validation and coherent commits/PR updates are queued through the migration coordinator. Issue61 remains open. Original migration takes native/shared-path priority.

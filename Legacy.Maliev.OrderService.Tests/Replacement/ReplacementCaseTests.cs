@@ -12,6 +12,37 @@ public sealed class ReplacementCaseTests
     private static ReplacementCase Approved(int quantity = 3) => Case(quantity).Approve(ReturnDecision.Waived, false, false, "No return required", 8, Now);
 
     [Fact]
+    public void Operational_cost_and_claim_facts_continue_after_remedy_closure_with_immutable_corrections()
+    {
+        var value = Approved(1).WaiveRemaining(94826, 1, "Customer waived physical remedy", 8, Now).Close(8, Now);
+        var original = value.Originals.Single();
+        value = value.RecordRecoveryFact(94826, RecoveryFactKind.Cost, 125.50m, "THB", new DateOnly(2026, 10, 8), "Remake material", Evidence, null, null, 9, Now);
+        value = value.RecordRecoveryFact(94826, RecoveryFactKind.Cost, 120m, "THB", new DateOnly(2026, 10, 8), "Correct material receipt", Evidence, null, 1, 9, Now);
+        value = value.RecordRecoveryFact(94826, RecoveryFactKind.Claimed, 200m, "THB", new DateOnly(2026, 10, 8), "Claim reference recorded", Evidence, "CARRIER-123", null, 9, Now);
+        Assert.Equal(ReplacementState.Closed, value.State); Assert.Equal(original, value.Originals.Single());
+        Assert.Equal(125.50m, value.RecoveryFacts[0].Amount); Assert.Equal(1, value.RecoveryFacts[1].CorrectsFactId);
+        Assert.Equal(12, value.RecoveryFacts[0].QuotationId); Assert.Equal(34, value.RecoveryFacts[0].InvoiceId);
+        Assert.Throws<ReplacementRuleException>(() => value.RecordRecoveryFact(94826, RecoveryFactKind.Cost, 119m, "THB", new DateOnly(2026, 10, 8), "Fork correction", Evidence, null, 1, 9, Now));
+    }
+    [Theory]
+    [InlineData(-1, "THB")]
+    [InlineData(1.001, "THB")]
+    [InlineData(1, "thb")]
+    [InlineData(1, "US")]
+    public void Recovery_amounts_and_currency_are_explicit_bounded_facts(decimal amount, string currency)
+    {
+        Assert.Throws<ReplacementRuleException>(() => Approved().RecordRecoveryFact(94826, RecoveryFactKind.Cost, amount, currency, new DateOnly(2026, 10, 8), "Observed cost", Evidence, null, null, 9, Now));
+    }
+    [Fact]
+    public void Claim_facts_require_reference_and_corrections_preserve_owner_and_currency()
+    {
+        var value = Approved().RecordRecoveryFact(94826, RecoveryFactKind.Claimed, 100m, "THB", new DateOnly(2026, 10, 8), "Observed carrier claim", Evidence, "REF", null, 9, Now);
+        Assert.Throws<ReplacementRuleException>(() => value.RecordRecoveryFact(94826, RecoveryFactKind.Received, 100m, "THB", new DateOnly(2026, 10, 8), "Observed", Evidence, null, null, 9, Now));
+        Assert.Throws<ReplacementRuleException>(() => value.RecordRecoveryFact(94826, RecoveryFactKind.Claimed, 3m, "USD", new DateOnly(2026, 10, 8), "Wrong currency correction", Evidence, "REF", 1, 9, Now));
+        Assert.Throws<ReplacementRuleException>(() => value.RecordRecoveryFact(94876, RecoveryFactKind.Cost, 1m, "THB", new DateOnly(2026, 10, 8), "Unrelated", Evidence, null, null, 9, Now));
+    }
+
+    [Fact]
     public void Partial_replacement_preserves_original_snapshot_and_separate_counts()
     {
         var original = Original() with { Quantity = 10, Manufactured = 10, AffectedQuantity = 3 };

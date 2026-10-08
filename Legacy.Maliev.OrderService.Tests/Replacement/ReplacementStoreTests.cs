@@ -1,4 +1,6 @@
 using System.Reflection;
+using Moq;
+using Legacy.Maliev.OrderService.Application.Replacement;
 using Legacy.Maliev.OrderService.Data;
 using Legacy.Maliev.OrderService.Data.Replacement;
 using Legacy.Maliev.OrderService.Domain;
@@ -147,6 +149,57 @@ public sealed class ReplacementStoreTests : IAsyncLifetime
         await transaction.CommitAsync();
         await Assert.ThrowsAsync<ReplacementRuleException>(() => intake);
         Assert.Empty(await db.Set<ReplacementCaseRow>().ToListAsync());
+    }
+
+    [Fact]
+    public async Task Concurrent_open_cases_cannot_reserve_the_same_original_demand_twice()
+    {
+        var id = await Seed();
+        await Store().CreateAsync(42, ReplacementReason.CarrierDamage, [new(id, 1)], Evidence, 7, Guid.NewGuid(), Now, default);
+        await Store().CreateAsync(42, ReplacementReason.ManufacturingNonconformance, [new(id, 2)], Evidence, 7, Guid.NewGuid(), Now, default);
+        await Assert.ThrowsAsync<ReplacementRuleException>(() => Store().CreateAsync(42, ReplacementReason.CarrierDamage, [new(id, 1)], Evidence, 7, Guid.NewGuid(), Now, default));
+        await using var db = Db(); Assert.Equal(2, await db.Set<ReplacementCaseRow>().CountAsync());
+        Assert.Equal(3, (await db.Set<Order>().SingleAsync(x => x.Id == id)).Manufactured);
+    }
+
+    [Fact]
+    public async Task Changed_original_customer_after_intake_denies_command_without_audit_or_receipt()
+    {
+        var id = await Seed(); var value = await Create(id); var operation = Guid.NewGuid();
+        await using var db = Db();
+        await db.Set<Order>().Where(x => x.Id == id).ExecuteUpdateAsync(s => s.SetProperty(x => x.CustomerId, 99));
+        await Assert.ThrowsAsync<ReplacementDeniedException>(() => Store().ExecuteAsync(value.Id, 1, operation, 8,
+            new ApproveReplacement(ReturnDecision.Waived, false, false, "Approve"), Now, default));
+        Assert.Equal(1, (await Store().GetAsync(value.Id, default))!.Value.Revision);
+        Assert.False(await db.Set<ReplacementOperationRow>().AnyAsync(x => x.OperationId == operation));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Replay_rechecks_ownership_changed_during_evidence_verification(bool commandReplay)
+    {
+        var id = await Seed(); var reportOperation = Guid.NewGuid(); var value = await Create(id, reportOperation);
+        var commandOperation = Guid.NewGuid(); var command = new ApproveReplacement(ReturnDecision.Waived, false, false, "Approved");
+        if (commandReplay) await Store().ExecuteAsync(value.Id, 1, commandOperation, 7, command, Now, default);
+        var authority = new Mock<IReplacementAuthority>();
+        authority.Setup(x => x.AuthorizeAsync("staff", 42, It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(new ReplacementAuthorityDecision(ReplacementAuthorityOutcome.Allowed, 7, "trusted"));
+        var evidence = new Mock<IReplacementEvidenceVerifier>();
+        evidence.Setup(x => x.RequireAsync(42, It.IsAny<IReadOnlyList<int>>(), Evidence, "Evidence", It.IsAny<CancellationToken>())).Returns(async () =>
+        {
+            // The service has read the current owner; simulate the concurrent canonical owner write
+            // while its protected evidence RPC is outstanding, before the durable replay runs.
+            await using var db = Db(); await using var tx = await db.Database.BeginTransactionAsync();
+            var identity = $"legacy-order-lifetime\n{id}";
+            await db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtextextended({identity}, 0))");
+            await db.Set<Order>().Where(x => x.Id == id).ExecuteUpdateAsync(s => s.SetProperty(x => x.CustomerId, 99));
+            await tx.CommitAsync();
+        });
+        var service = new ReplacementService(Store(), authority.Object, evidence.Object, new(true), TimeProvider.System);
+        await Assert.ThrowsAsync<ReplacementDeniedException>(() => commandReplay
+            ? service.ExecuteAsync("staff", value.Id, 1, commandOperation, command, default)
+            : service.ReportAsync("staff", reportOperation, new(42, ReplacementReason.CarrierDamage, [new(id, 3)], Evidence), default));
+        await using var check = Db(); Assert.Equal(commandReplay ? 2 : 1, await check.Set<ReplacementOperationRow>().CountAsync());
     }
 
     private sealed class FixtureContext(DbContextOptions<FixtureContext> options) : DbContext(options)

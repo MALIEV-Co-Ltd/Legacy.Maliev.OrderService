@@ -2,6 +2,7 @@ using System.Text.Json.Serialization;
 
 namespace Legacy.Maliev.OrderService.Domain.Replacement;
 
+[JsonDerivedType(typeof(RecordReplacementRecoveryFact), "RecordRecoveryFact")]
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "Kind")]
 [JsonDerivedType(typeof(ApproveReplacement), "Approve")]
 [JsonDerivedType(typeof(RejectReplacement), "Reject")]
@@ -63,4 +64,10 @@ public sealed record WaiveReplacementReturn(string Reason) : ReplacementCommand
 public sealed record WaiveReplacementQuantity(int OrderId, int Quantity, string Reason) : ReplacementCommand
 {
     public override ReplacementCase Apply(ReplacementCase value, int employeeId, DateTimeOffset now) => value.WaiveRemaining(OrderId, Quantity, Reason, employeeId, now);
+}
+
+public sealed record RecordReplacementRecoveryFact(int OrderId, RecoveryFactKind FactKind, decimal Amount, string Currency,
+    DateOnly ObservedDate, string Description, ReplacementEvidence Evidence, string? ClaimReference, int? CorrectsFactId) : ReplacementCommand
+{
+    public override ReplacementCase Apply(ReplacementCase value, int employeeId, DateTimeOffset now) => value.RecordRecoveryFact(OrderId, FactKind, Amount, Currency, ObservedDate, Description, Evidence, ClaimReference, CorrectsFactId, employeeId, now);
 }
