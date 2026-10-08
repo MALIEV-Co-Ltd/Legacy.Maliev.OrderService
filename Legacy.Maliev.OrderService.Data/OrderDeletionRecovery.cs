@@ -38,6 +38,12 @@ public sealed partial class OrderRepository
                     return receipt.CompletedAtUtc is null ? OrderDeletionResult.Deleted : OrderDeletionResult.NotFound;
                 }
                 if (!exists) return OrderDeletionResult.NotFound;
+                // Older deployments have no replacement tables. Once present, preserve case lineage
+                // under the same lifetime fence used by replacement intake, before any deletion intent.
+                var replacementTableExists = await attempt.Database.SqlQueryRaw<bool>(
+                    "SELECT to_regclass('\"ReplacementAffectedOrder\"') IS NOT NULL AS \"Value\"").SingleAsync(cancellationToken);
+                if (replacementTableExists && await attempt.Set<Domain.Replacement.ReplacementAffectedRow>()
+                    .AnyAsync(x => x.OrderId == id, cancellationToken)) return OrderDeletionResult.Conflict;
                 var now = clock.GetUtcNow().UtcDateTime;
                 attempt.DeletionIntents.Add(new OrderDeletionIntent
                 {
