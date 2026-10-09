@@ -1,5 +1,12 @@
 # Commerce frozen source intake
 
+The current Order44 successor binds five reviewed postimages to protected base
+`cb57f8f198e9fff1a2ef170fc1856be80b18c5c0`. It preserves the combined customer-query
+and omitted-size draft and restores explicit positive page sizes on the three
+order master routes. Fifteen new HTTP/PostgreSQL cases and the prior nine cases
+are authored but unrun. Consumer rendering and native admission remain separate.
+Previous frozen capsules and their source history remain retained review evidence.
+
 This transport validates and assembles the fixed candidate and dependency graph.
 It does not execute candidate code, start an SDK or Docker, accept native results,
 deploy, or close source migration issues. The shared File producer is copied with
