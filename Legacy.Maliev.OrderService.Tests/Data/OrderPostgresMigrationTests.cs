@@ -111,7 +111,7 @@ public sealed class OrderPostgresMigrationTests : IAsyncLifetime
             .ToArrayAsync();
         Assert.Equal(3, after.Length);
         Assert.Equal(legacyRows, after.Where(file => legacyRows.Any(retained => retained.Id == file.Id)).ToArray());
-        var storedPadded = Assert.Single(after.Where(file => file.Id == padded.Id));
+        var storedPadded = Assert.Single(after, file => file.Id == padded.Id);
         Assert.Equal(padded.OrderId, storedPadded.OrderId);
         Assert.Equal(padded.Bucket, storedPadded.Bucket);
         Assert.Equal(padded.ObjectName, storedPadded.ObjectName);
