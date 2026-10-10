@@ -77,7 +77,7 @@ public sealed record UpsertOrderRequest(
     bool AllowPayment,
     string? TrackingNumber,
     [param: StringLength(128)] string? OperationKey = null);
-public sealed record ProcessResponse(int Id, int CategoryId, string Name, DateTime? CreatedDate, DateTime? ModifiedDate); public sealed record UpsertProcessRequest(int CategoryId, string Name);
+public sealed record ProcessResponse(int Id, int CategoryId, string Name, DateTime? CreatedDate, DateTime? ModifiedDate); public sealed record UpsertProcessRequest(int CategoryId, [property: JsonConverter(typeof(ProcessScalarStringJsonConverter))] string Name);
 public sealed record CategoryResponse(int Id, string? Name, DateTime? CreatedDate, DateTime? ModifiedDate); public sealed record UpsertCategoryRequest([property: JsonConverter(typeof(CategoryScalarStringJsonConverter))] string? Name);
 public sealed record FileFormatResponse(int Id, string? Name, string? Extension, DateTime? CreatedDate, DateTime? ModifiedDate); public sealed record UpsertFileFormatRequest([property: JsonConverter(typeof(FileFormatScalarStringJsonConverter))] string? Name, [property: JsonConverter(typeof(FileFormatScalarStringJsonConverter))] string? Extension);
 public sealed record OrderFileResponse(int Id, int OrderId, string Bucket, string ObjectName, DateTime? CreatedDate, DateTime? ModifiedDate);
