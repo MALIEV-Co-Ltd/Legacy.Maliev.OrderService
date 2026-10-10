@@ -69,6 +69,10 @@ public sealed class OrderPostgresMigrationTests : IAsyncLifetime
         var expectedId = await firstOrders.Files
             .Where(file => file.OrderId == order.Id)
             .MinAsync(file => file.Id);
+        var legacyRows = await firstOrders.Files.AsNoTracking()
+            .Where(file => file.OrderId == order.Id).OrderBy(file => file.Id)
+            .Select(file => new OrderFileResponse(file.Id, file.OrderId, file.Bucket, file.ObjectName, file.CreatedDate, file.ModifiedDate))
+            .ToArrayAsync();
 
         await using var secondOrders = OC();
         await using var secondStatuses = SC();
@@ -76,8 +80,8 @@ public sealed class OrderPostgresMigrationTests : IAsyncLifetime
         var results = await Task.WhenAll(
             firstRepository.CreateFileAsync(
                 order.Id,
-                " maliev-quotation-requests ",
-                " instant-quotation/legacy-duplicate.stl ",
+                "maliev-quotation-requests",
+                "instant-quotation/legacy-duplicate.stl",
                 default),
             secondRepository.CreateFileAsync(
                 order.Id,
@@ -89,6 +93,28 @@ public sealed class OrderPostgresMigrationTests : IAsyncLifetime
         firstOrders.ChangeTracker.Clear();
         Assert.Equal(2, await firstOrders.Files.AsNoTracking()
             .CountAsync(file => file.OrderId == order.Id));
+
+        // Exact legacy duplicates still replay the lowest ID; edge spaces now identify
+        // a distinct literal rather than normalizing or rewriting either retained row.
+        var padded = await firstRepository.CreateFileAsync(order.Id, " maliev-quotation-requests ", " instant-quotation/legacy-duplicate.stl ", default);
+        Assert.NotNull(padded);
+        Assert.DoesNotContain(legacyRows, file => file.Id == padded.Id);
+        Assert.Equal(" maliev-quotation-requests ", padded.Bucket);
+        Assert.Equal(" instant-quotation/legacy-duplicate.stl ", padded.ObjectName);
+        var paddedReplay = await secondRepository.CreateFileAsync(order.Id, padded.Bucket, padded.ObjectName, default);
+        Assert.Equal(padded.Id, paddedReplay?.Id);
+        var exactReplay = await firstRepository.CreateFileAsync(order.Id, "maliev-quotation-requests", "instant-quotation/legacy-duplicate.stl", default);
+        Assert.Equal(expectedId, exactReplay?.Id);
+        var after = await firstOrders.Files.AsNoTracking()
+            .Where(file => file.OrderId == order.Id).OrderBy(file => file.Id)
+            .Select(file => new OrderFileResponse(file.Id, file.OrderId, file.Bucket, file.ObjectName, file.CreatedDate, file.ModifiedDate))
+            .ToArrayAsync();
+        Assert.Equal(3, after.Length);
+        Assert.Equal(legacyRows, after.Where(file => legacyRows.Any(retained => retained.Id == file.Id)).ToArray());
+        var storedPadded = Assert.Single(after.Where(file => file.Id == padded.Id));
+        Assert.Equal(padded.OrderId, storedPadded.OrderId);
+        Assert.Equal(padded.Bucket, storedPadded.Bucket);
+        Assert.Equal(padded.ObjectName, storedPadded.ObjectName);
     }
 
     [Fact]

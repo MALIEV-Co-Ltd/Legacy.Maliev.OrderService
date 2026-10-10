@@ -286,7 +286,7 @@ public sealed class OrderFileLiteralHttpTests(OrderDeletionReadinessFixture fixt
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         Assert.NotNull(response.Headers.Location);
         var file = (await response.Content.ReadFromJsonAsync<OrderFileResponse>())!;
-        Assert.Equal($"/orders/files/{file.Id}", response.Headers.Location!.AbsolutePath);
+        Assert.Equal($"/orders/Files/{file.Id}", response.Headers.Location!.AbsolutePath);
         return file;
     }
 
