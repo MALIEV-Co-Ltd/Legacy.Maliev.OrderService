@@ -87,7 +87,7 @@ public sealed record OrderFileResponse(int Id, int OrderId, string Bucket, strin
 /// <param name="Bucket">Storage bucket name.</param>
 /// <param name="ObjectName">Storage object name.</param>
 public sealed record UpsertOrderFileRequest(int? OrderId, string Bucket, string ObjectName);
-public sealed record OrderStatusResponse(int Id, string? Name, string? Description, DateTime? CreatedDate, DateTime? ModifiedDate); public sealed record UpsertOrderStatusRequest(string? Name, string? Description);
+public sealed record OrderStatusResponse(int Id, string? Name, string? Description, DateTime? CreatedDate, DateTime? ModifiedDate); public sealed record UpsertOrderStatusRequest([property: JsonConverter(typeof(OrderStatusScalarStringJsonConverter))] string? Name, [property: JsonConverter(typeof(OrderStatusScalarStringJsonConverter))] string? Description);
 public sealed record OrderStatusHistoryResponse(int Id, int OrderId, int OrderStatusId, string? Name, string? Description, DateTime? CreatedDate, DateTime? ModifiedDate); public sealed record UpsertOrderStatusHistoryRequest(int OrderId, int OrderStatusId);
 public sealed record CustomerOrderDetails(OrderResponse Order, ProcessResponse? Process, IReadOnlyList<OrderStatusHistoryResponse> History, IReadOnlyList<OrderFileResponse> Files);
 public sealed record PaginatedResponse<T>(IReadOnlyList<T> Items, int PageIndex, int TotalPages, int TotalRecords) { public bool HasNextPage => PageIndex < TotalPages; public bool HasPreviousPage => PageIndex > 1; }
