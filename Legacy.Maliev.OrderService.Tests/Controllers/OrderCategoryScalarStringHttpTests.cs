@@ -136,7 +136,7 @@ public sealed class OrderCategoryScalarStringHttpTests(OrderDeletionReadinessFix
     [Fact]
     public void Converter_IsCategoryRequestOnly_AndSerializationStillWritesStrings()
     {
-        Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<UpsertOrderFileRequest>("{\"Bucket\":123,\"ObjectName\":\"metadata-only\"}"));
+        Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<UpsertOrderFileRequest>("{\"OrderId\":{},\"Bucket\":\"metadata-only\",\"ObjectName\":\"metadata-only\"}"));
         var request = JsonSerializer.Deserialize<UpsertCategoryRequest>(Payload("12.3400E+03"))!;
         using var wire = JsonDocument.Parse(JsonSerializer.Serialize(request));
         foreach (var field in new[] { "Name" })

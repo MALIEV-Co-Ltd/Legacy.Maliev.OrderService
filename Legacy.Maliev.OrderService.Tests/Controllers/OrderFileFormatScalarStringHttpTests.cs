@@ -141,7 +141,7 @@ public sealed class OrderFileFormatScalarStringHttpTests(OrderDeletionReadinessF
     [Fact]
     public void Converter_IsFileFormatRequestOnly_AndSerializationStillWritesStrings()
     {
-        Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<UpsertOrderFileRequest>("{\"Bucket\":123,\"ObjectName\":\"metadata-only\"}"));
+        Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<UpsertOrderFileRequest>("{\"OrderId\":{},\"Bucket\":\"metadata-only\",\"ObjectName\":\"metadata-only\"}"));
         var request = JsonSerializer.Deserialize<UpsertFileFormatRequest>(Payload("12.3400E+03"))!;
         using var wire = JsonDocument.Parse(JsonSerializer.Serialize(request));
         foreach (var field in new[] { "Name", "Extension" })
