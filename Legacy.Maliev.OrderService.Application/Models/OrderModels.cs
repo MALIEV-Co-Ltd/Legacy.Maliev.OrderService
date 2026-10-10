@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json.Serialization;
 namespace Legacy.Maliev.OrderService.Application.Models;
 
 /// <summary>An order snapshot with scalar service references and persisted computed values.</summary>
@@ -77,8 +78,8 @@ public sealed record UpsertOrderRequest(
     string? TrackingNumber,
     [param: StringLength(128)] string? OperationKey = null);
 public sealed record ProcessResponse(int Id, int CategoryId, string Name, DateTime? CreatedDate, DateTime? ModifiedDate); public sealed record UpsertProcessRequest(int CategoryId, string Name);
-public sealed record CategoryResponse(int Id, string? Name, DateTime? CreatedDate, DateTime? ModifiedDate); public sealed record UpsertCategoryRequest(string? Name);
-public sealed record FileFormatResponse(int Id, string? Name, string? Extension, DateTime? CreatedDate, DateTime? ModifiedDate); public sealed record UpsertFileFormatRequest(string? Name, string? Extension);
+public sealed record CategoryResponse(int Id, string? Name, DateTime? CreatedDate, DateTime? ModifiedDate); public sealed record UpsertCategoryRequest([property: JsonConverter(typeof(CategoryScalarStringJsonConverter))] string? Name);
+public sealed record FileFormatResponse(int Id, string? Name, string? Extension, DateTime? CreatedDate, DateTime? ModifiedDate); public sealed record UpsertFileFormatRequest([property: JsonConverter(typeof(FileFormatScalarStringJsonConverter))] string? Name, [property: JsonConverter(typeof(FileFormatScalarStringJsonConverter))] string? Extension);
 public sealed record OrderFileResponse(int Id, int OrderId, string Bucket, string ObjectName, DateTime? CreatedDate, DateTime? ModifiedDate);
 /// <summary>Bucket and object metadata for an owned order; no object upload is performed.</summary>
 /// <example>{"OrderId":42,"Bucket":"metadata-bucket","ObjectName":"drawings/part.step"}</example>
