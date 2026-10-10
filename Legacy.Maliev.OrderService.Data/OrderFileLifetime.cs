@@ -44,14 +44,14 @@ public sealed partial class OrderRepository
         WithLifetimeAsync<OrderFileResponse?>([orderId], async (o, _, _) =>
         {
             if (await IsDeletedLifetimeAsync(o, orderId, c) || !await o.Orders.AnyAsync(x => x.Id == orderId, c)) return null;
-            var normalizedBucket = bucket.Trim();
-            var normalizedObjectName = objectName.Trim();
-            var lockIdentity = $"order-file\n{orderId}\n{normalizedBucket}\n{normalizedObjectName}";
+            var literalBucket = bucket;
+            var literalObjectName = objectName;
+            var lockIdentity = $"order-file\n{orderId}\n{literalBucket}\n{literalObjectName}";
             await o.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtextextended({lockIdentity}, 0))", c);
-            var existing = await ProjectFiles(o.Files.AsNoTracking().Where(x => x.OrderId == orderId && x.Bucket == normalizedBucket && x.ObjectName == normalizedObjectName).OrderBy(x => x.Id)).FirstOrDefaultAsync(c);
+            var existing = await ProjectFiles(o.Files.AsNoTracking().Where(x => x.OrderId == orderId && x.Bucket == literalBucket && x.ObjectName == literalObjectName).OrderBy(x => x.Id)).FirstOrDefaultAsync(c);
             if (existing is not null) return existing;
             var now = Now();
-            var entity = new OrderFile { OrderId = orderId, Bucket = normalizedBucket, ObjectName = normalizedObjectName, CreatedDate = now, ModifiedDate = now };
+            var entity = new OrderFile { OrderId = orderId, Bucket = literalBucket, ObjectName = literalObjectName, CreatedDate = now, ModifiedDate = now };
             o.Add(entity);
             await o.SaveChangesAsync(c);
             return File(entity);
@@ -94,8 +94,8 @@ public sealed partial class OrderRepository
                 if (row is null || row.OrderId != original.Value) return false;
                 if (await IsDeletedLifetimeAsync(o, original.Value, c) || await IsDeletedLifetimeAsync(o, destination, c)) return false;
                 row.OrderId = destination;
-                row.Bucket = r.Bucket.Trim();
-                row.ObjectName = r.ObjectName.Trim();
+                row.Bucket = r.Bucket;
+                row.ObjectName = r.ObjectName;
                 row.ModifiedDate = Now();
                 await o.SaveChangesAsync(c);
                 return true;
