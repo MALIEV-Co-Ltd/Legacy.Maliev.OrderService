@@ -9,6 +9,8 @@ using Legacy.Maliev.OrderService.Data;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Time.Testing;
 
 namespace Legacy.Maliev.OrderService.Tests.Controllers;
 
@@ -51,7 +53,13 @@ public sealed class ProcessSourceNameHttpTests(OrderDeletionReadinessFixture fix
     [InlineData(" ก padded ")]
     public async Task EmptyAndPaddedNamesPreserveExactCreateAndUpdateValues(string name)
     {
-        await using var app = await fixture.AppAsync(null);
+        var instant = new DateTimeOffset(2026, 10, 11, 0, 0, 0, TimeSpan.Zero).AddTicks(1234567);
+        var clock = new FakeTimeProvider(instant);
+        await using var app = await fixture.AppAsync(null, configure: services =>
+        {
+            services.RemoveAll<TimeProvider>();
+            services.AddSingleton<TimeProvider>(clock);
+        });
         using var writer = Client(app, OrderPermissions.CatalogWrite);
         using var reader = Client(app, OrderPermissions.CatalogRead);
         var (category, process) = await SeedAsync(writer);
@@ -59,13 +67,28 @@ public sealed class ProcessSourceNameHttpTests(OrderDeletionReadinessFixture fix
         Assert.Equal(HttpStatusCode.Created, create.StatusCode);
         var created = (await create.Content.ReadFromJsonAsync<ProcessResponse>())!;
         Assert.Equal(name, created.Name);
+        var createdTime = DateTime.SpecifyKind(instant.UtcDateTime, DateTimeKind.Unspecified);
+        Assert.Equal(createdTime, created.CreatedDate);
+        Assert.Equal(createdTime, created.ModifiedDate);
         Assert.NotNull(create.Headers.Location);
-        Assert.Equal(created, await reader.GetFromJsonAsync<ProcessResponse>(create.Headers.Location));
+        var storedCreatedTime = new DateTime(createdTime.Ticks - createdTime.Ticks % 10, DateTimeKind.Unspecified);
+        var readback = (await reader.GetFromJsonAsync<ProcessResponse>(create.Headers.Location))!;
+        Assert.Equal(created with { CreatedDate = storedCreatedTime, ModifiedDate = storedCreatedTime }, readback);
+        clock.Advance(TimeSpan.FromSeconds(1) + TimeSpan.FromTicks(2));
         using var update = await SendAsync(writer, true, process.Id, category.Id, name);
         Assert.Equal(HttpStatusCode.NoContent, update.StatusCode);
-        Assert.Equal(name, (await reader.GetFromJsonAsync<ProcessResponse>($"/orders/processes/{process.Id}"))!.Name);
+        var updatedTime = DateTime.SpecifyKind(clock.GetUtcNow().UtcDateTime, DateTimeKind.Unspecified);
+        var storedUpdatedTime = new DateTime(updatedTime.Ticks - updatedTime.Ticks % 10, DateTimeKind.Unspecified);
+        var updated = (await reader.GetFromJsonAsync<ProcessResponse>($"/orders/processes/{process.Id}"))!;
+        Assert.Equal(new ProcessResponse(process.Id, category.Id, name, storedCreatedTime, storedUpdatedTime), updated);
         await using var scope = app.Services.CreateAsyncScope();
-        Assert.All(await scope.ServiceProvider.GetRequiredService<OrderDbContext>().Processes.AsNoTracking().ToArrayAsync(), row => Assert.Equal(name, row.Name));
+        var rows = await scope.ServiceProvider.GetRequiredService<OrderDbContext>().Processes.AsNoTracking().ToArrayAsync();
+        Assert.All(rows, row => Assert.Equal(name, row.Name));
+        foreach (var row in rows)
+        {
+            var expected = row.Id == created.Id ? readback : updated;
+            Assert.Equal(expected, new ProcessResponse(row.Id, row.CategoryId, row.Name, row.CreatedDate, row.ModifiedDate));
+        }
     }
 
     [Theory]
