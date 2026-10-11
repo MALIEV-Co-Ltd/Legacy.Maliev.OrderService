@@ -289,13 +289,16 @@ namespace Legacy.Maliev.OrderService.Data.Migrations.Order
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
+                        .HasColumnType("text");
 
                     b.HasKey("Id");
 
                     b.HasIndex("CategoryId");
 
-                    b.ToTable("Process", (string)null);
+                    b.ToTable("Process", (string)null, t =>
+                        {
+                            t.HasCheckConstraint("CK_Process_Name_SourceLength", "char_length(\"Name\") + char_length(regexp_replace(\"Name\" COLLATE \"C\", U&'[\\0001-\\FFFF]', '', 'g')) <= 50");
+                        });
                 });
 
             modelBuilder.Entity("Legacy.Maliev.OrderService.Domain.Order", b =>
