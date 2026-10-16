@@ -57,8 +57,8 @@ public sealed record OrderResponse(int Id, int? CustomerId, int? EmployeeId, str
 public sealed record UpsertOrderRequest(
     int? CustomerId,
     int? EmployeeId,
-    [param: StringLength(100)] string? Name,
-    [param: StringLength(250)] string? Description,
+    [param: StringLength(100)][property: JsonConverter(typeof(OrderStatusScalarStringJsonConverter))] string? Name,
+    [param: StringLength(250)][property: JsonConverter(typeof(OrderStatusScalarStringJsonConverter))] string? Description,
     int ProcessId,
     int? MaterialId,
     int? SurfaceFinishId,
