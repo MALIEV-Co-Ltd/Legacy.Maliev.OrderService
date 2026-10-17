@@ -153,6 +153,88 @@ public sealed class OrderSourceBodyBoundaryTests
         Assert.All(logs.Exceptions, exception => Assert.Null(exception));
     }
 
+    public static TheoryData<Type, string> DirectTextFields => new()
+    {
+        { typeof(UpsertCategoryRequest), "Name" },
+        { typeof(UpsertFileFormatRequest), "Name" },
+        { typeof(UpsertFileFormatRequest), "Extension" },
+        { typeof(UpsertProcessRequest), "Name" },
+        { typeof(UpsertOrderFileRequest), "Bucket" },
+        { typeof(UpsertOrderFileRequest), "ObjectName" },
+        { typeof(UpsertOrderStatusRequest), "Name" },
+        { typeof(UpsertOrderStatusRequest), "Description" },
+        { typeof(UpsertOrderRequest), "Name" },
+        { typeof(UpsertOrderRequest), "Description" },
+    };
+
+    [Theory]
+    [MemberData(nameof(DirectTextFields))]
+    public void DirectStj_PrimitiveReaderAndStringWriter_RoundTripLiteralValues(Type dtoType, string field)
+    {
+        // Independent expected values: native DTO callers still use these public
+        // property converters even though the selected HTTP reader no longer does.
+        (string Token, string? Expected)[] cases =
+        [
+            ("123", "123"), ("-0", "-0"), ("12.3400E+03", "12.3400E+03"),
+            ("true", "true"), ("false", "false"), ("\"\"", ""),
+            ("\"  ไทย 😀  \"", "  ไทย 😀  "), ("null", null),
+        ];
+        foreach (var item in cases)
+        {
+            var json = "{\"" + field + "\":" + item.Token + "}";
+            var dto = System.Text.Json.JsonSerializer.Deserialize(json, dtoType);
+            Assert.NotNull(dto);
+            using var wire = System.Text.Json.JsonSerializer.SerializeToDocument(dto, dtoType);
+            var value = wire.RootElement.GetProperty(field);
+            if (item.Expected is null)
+                Assert.Equal(System.Text.Json.JsonValueKind.Null, value.ValueKind);
+            else
+            {
+                Assert.Equal(System.Text.Json.JsonValueKind.String, value.ValueKind);
+                Assert.Equal(item.Expected, value.GetString());
+            }
+            var reread = System.Text.Json.JsonSerializer.Deserialize(wire.RootElement.GetRawText(), dtoType);
+            Assert.NotNull(reread);
+            using var roundtrip = System.Text.Json.JsonSerializer.SerializeToDocument(reread, dtoType);
+            Assert.Equal(item.Expected, roundtrip.RootElement.GetProperty(field).GetString());
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(DirectTextFields))]
+    public void DirectStj_DuplicatePropertiesRetainLastValueIncludingNull(Type dtoType, string field)
+    {
+        (string Values, string? Expected)[] cases =
+        [
+            ("\"first\",\"" + field + "\":null", null),
+            ("null,\"" + field + "\":\"last\"", "last"),
+            ("123,\"" + field + "\":false", "false"),
+        ];
+        foreach (var item in cases)
+        {
+            var dto = System.Text.Json.JsonSerializer.Deserialize("{\"" + field + "\":" + item.Values + "}", dtoType);
+            Assert.NotNull(dto);
+            using var wire = System.Text.Json.JsonSerializer.SerializeToDocument(dto, dtoType);
+            Assert.Equal(item.Expected, wire.RootElement.GetProperty(field).GetString());
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(DirectTextFields))]
+    public void DirectStj_InvalidKindsFailAtThePropertyEvenBeforeALaterValidDuplicate(Type dtoType, string field)
+    {
+        foreach (var invalid in new[] { "[]", "{\"private-direct-marker\":true}" })
+        {
+            foreach (var suffix in new[] { "", ",\"" + field + "\":\"later\"" })
+            {
+                var error = Assert.Throws<System.Text.Json.JsonException>(() =>
+                    System.Text.Json.JsonSerializer.Deserialize("{\"" + field + "\":" + invalid + suffix + "}", dtoType));
+                Assert.Equal("$." + field, error.Path);
+                Assert.DoesNotContain("private-direct-marker", error.Message, StringComparison.Ordinal);
+            }
+        }
+    }
+
     private static IInputFormatter Candidate(ILoggerFactory? logs = null)
     {
         var mvc = new MvcOptions();
