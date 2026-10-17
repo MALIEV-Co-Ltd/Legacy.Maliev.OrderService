@@ -272,7 +272,7 @@ public sealed class OrderFileLiteralHttpTests(OrderDeletionReadinessFixture fixt
     }
 
     private static string Query(int orderId, string bucket, string objectName) => $"/orders/{orderId}/files?bucket={Uri.EscapeDataString(bucket)}&objectName={Uri.EscapeDataString(objectName)}";
-    private static string Payload(bool bucketField, string token) => bucketField ? $"{{\"Bucket\":{token},\"ObjectName\":\" control.step \"}}" : $"{{\"Bucket\":\" control \",\"ObjectName\":{token}}}";
+    private static string Payload(bool bucketField, string token) => bucketField ? $"{{\"OrderId\":9003,\"Bucket\":{token},\"ObjectName\":\" control.step \"}}" : $"{{\"OrderId\":9003,\"Bucket\":\" control \",\"ObjectName\":{token}}}";
 
     private static async Task<HttpResponseMessage> PutAsync(HttpClient client, int id, string payload)
     {

@@ -83,7 +83,7 @@ public sealed record FileFormatResponse(int Id, string? Name, string? Extension,
 public sealed record OrderFileResponse(int Id, int OrderId, string Bucket, string ObjectName, DateTime? CreatedDate, DateTime? ModifiedDate);
 /// <summary>Bucket and object metadata for an owned order; no object upload is performed.</summary>
 /// <example>{"OrderId":42,"Bucket":"metadata-bucket","ObjectName":"drawings/part.step"}</example>
-/// <param name="OrderId">Optional owner identifier; omission preserves the existing owner.</param>
+/// <param name="OrderId">Source HTTP omission or null binds zero; direct DTO callers may pass null to preserve the existing owner.</param>
 /// <param name="Bucket">Storage bucket name.</param>
 /// <param name="ObjectName">Storage object name.</param>
 public sealed record UpsertOrderFileRequest(int? OrderId, [property: JsonConverter(typeof(OrderFileScalarStringJsonConverter))] string Bucket, [property: JsonConverter(typeof(OrderFileScalarStringJsonConverter))] string ObjectName);
