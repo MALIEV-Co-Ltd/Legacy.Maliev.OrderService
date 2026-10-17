@@ -101,7 +101,7 @@ public sealed class OrderSourceBodyBoundaryTests
         Assert.NotNull(owned);
         Assert.NotNull(spill);
         Assert.False(File.Exists(spill));
-        await Assert.ThrowsAsync<ObjectDisposedException>(async () => { await owned.ReadAsync(new byte[1]); });
+        await Assert.ThrowsAsync<ObjectDisposedException>(async () => { await owned.ReadExactlyAsync(new byte[1]); });
     }
 
     [Fact]
