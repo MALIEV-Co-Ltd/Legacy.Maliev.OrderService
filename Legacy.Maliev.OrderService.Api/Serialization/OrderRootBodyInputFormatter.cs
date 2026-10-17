@@ -133,6 +133,7 @@ internal sealed class OrderRootBodyInputFormatter(
         : NewtonsoftJsonInputFormatter(logger, json.SerializerSettings, ArrayPool<char>.Shared, pools, mvc, json)
     {
         private readonly IContractResolver sourceResolver = json.SerializerSettings.ContractResolver ?? new DefaultContractResolver();
+        private readonly int memoryThreshold = json.InputFormatterMemoryBufferThreshold;
 
         protected override Newtonsoft.Json.JsonSerializer CreateJsonSerializer(InputFormatterContext context)
         {
@@ -158,7 +159,7 @@ internal sealed class OrderRootBodyInputFormatter(
             long limit = Math.Min(context.HttpContext.Features.Get<IHttpMaxRequestBodySizeFeature>()?.MaxRequestBodySize
                 ?? 30_000_000, 30_000_000);
             capture.MaximumCharacters = checked((int)limit);
-            var buffered = new FileBufferingReadStream(original, json.InputFormatterMemoryBufferThreshold, limit,
+            var buffered = new FileBufferingReadStream(original, memoryThreshold, limit,
                 static () => Environment.GetEnvironmentVariable("ASPNETCORE_TEMP") ?? Path.GetTempPath());
             InputFormatterResult? result = null;
             Exception? primary = null;
