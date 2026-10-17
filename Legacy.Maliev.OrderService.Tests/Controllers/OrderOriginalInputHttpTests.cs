@@ -221,8 +221,10 @@ public sealed class OrderOriginalInputHttpTests(OrderDeletionReadinessFixture fi
         await using var app = await fixture.AppAsync(null);
         await SeedAsync(app);
         using var writer = Client(app, OrderPermissions.Update);
-        using var response = await writer.PutAsync("/orders/9003", new StringContent("{Name:'kept'}", Encoding.UTF8, "application/json"));
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        using var response = await writer.PutAsync("/orders/9003", new StringContent("{ProcessId:9002,Quantity:1,Name:'kept'}", Encoding.UTF8, "application/json"));
+        // This six-family formatter still does not select root Orders. The
+        // separate root source formatter now admits its legacy body grammar.
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<UpsertCategoryRequest>("{Name:'kept'}"));
         Assert.Null(JsonSerializer.Deserialize<UpsertOrderFileRequest>("{\"Bucket\":\"b\",\"ObjectName\":\"o\"}")!.OrderId);
     }

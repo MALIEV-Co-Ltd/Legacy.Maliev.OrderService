@@ -13,6 +13,7 @@ static void AddDeletionRecovery(IServiceCollection services)
 }
 var b = WebApplication.CreateBuilder(args); b.AddServiceDefaults(); b.AddDefaultApiVersioning(); b.AddPostgresDbContext<OrderDbContext>(connectionName: "OrderDbContext"); b.AddPostgresDbContext<OrderStatusDbContext>(connectionName: "OrderStatusDbContext"); b.AddStandardCache("legacy:order:"); b.AddStandardCors(); b.AddJwtAuthentication(); b.AddStandardMiddleware(o => o.EnableRequestLogging = true); b.AddStandardOpenApi(title: "Legacy MALIEV Order Service API", description: "Temporary .NET 10 compatibility API for order and order-status contracts."); b.Services.AddControllers().AddJsonOptions(o => { o.JsonSerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull; o.JsonSerializerOptions.PropertyNamingPolicy = null; o.JsonSerializerOptions.DictionaryKeyPolicy = null; }); // OpenAPI reads HTTP JSON options separately from MVC's serializer options.
 b.Services.ConfigureOptions<OrderSourceBodyInputFormatterSetup>();
+b.Services.ConfigureOptions<OrderRootBodyInputFormatterSetup>();
 b.Services.ConfigureHttpJsonOptions(o =>
 {
     o.SerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
