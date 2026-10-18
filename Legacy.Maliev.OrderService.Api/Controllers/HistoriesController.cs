@@ -118,7 +118,7 @@ public sealed class HistoriesController(IOrderService s, IIdempotencyStore idem)
             UpdateResult result;
             try
             {
-                result = await s.TransitionAsync(id, name, c);
+                result = await s.TransitionAsync(id, name == "InProgress" ? "In Progress" : name, c);
             }
             catch
             {
