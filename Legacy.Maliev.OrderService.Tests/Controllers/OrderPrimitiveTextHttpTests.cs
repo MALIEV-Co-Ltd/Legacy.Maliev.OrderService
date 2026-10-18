@@ -10,9 +10,12 @@ using Legacy.Maliev.OrderService.Data;
 using Legacy.Maliev.OrderService.Domain;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Time.Testing;
+using Npgsql;
+using NpgsqlTypes;
 
 namespace Legacy.Maliev.OrderService.Tests.Controllers;
 
@@ -316,6 +319,258 @@ public sealed class OrderPrimitiveTextHttpTests(OrderDeletionReadinessFixture fi
     }
 
     private static DateTime InitialTimestamp => new(2026, 10, 16, 0, 0, 0, DateTimeKind.Unspecified);
+
+
+    private const string TextPersistenceSentinel = "legacy:order:text-persistence:sentinel";
+
+    [Theory]
+    [InlineData(false, "Name")]
+    [InlineData(true, "Name")]
+    [InlineData(false, "Description")]
+    [InlineData(true, "Description")]
+    public async Task DirectOrderText_NullableBoundsAndDefaultsRefuseOverflowWithoutMutation(bool update, string field)
+    {
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 10, 18, 0, 0, 0, TimeSpan.Zero));
+        await using var app = await fixture.AppAsync(null, recoveryEnabled: update, configure: services =>
+        {
+            services.RemoveAll<TimeProvider>();
+            services.AddSingleton<TimeProvider>(clock);
+        });
+        await SeedTextPersistenceAsync(app);
+        await using var scope = app.Services.CreateAsyncScope();
+        var database = scope.ServiceProvider.GetRequiredService<OrderDbContext>();
+        var service = scope.ServiceProvider.GetRequiredService<IOrderService>();
+        var original = await database.Orders.AsNoTracking().SingleAsync(value => value.Id == 9003);
+        var preserved = TextPersistenceOtherColumns(original, true);
+        var ids = update ? new List<int> { 9003 } : new List<int>();
+        var maximum = TextPersistenceMaximum(field);
+        using var lifetime = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        foreach (var value in TextPersistenceValues(maximum))
+        {
+            var before = await TextPersistenceSnapshotAsync(app, ids.ToArray());
+            var name = field == "Name" ? value : "Control";
+            var description = field == "Description" ? value : "Control description";
+            var request = TextPersistenceRequest(name, description);
+            clock.Advance(TimeSpan.FromSeconds(1));
+            var written = clock.GetUtcNow().UtcDateTime;
+            int id;
+            if (update)
+            {
+                Assert.Equal(UpdateResult.Updated, await service.UpdateOrderAsync(9003, request, null, lifetime.Token));
+                id = 9003;
+            }
+            else
+            {
+                var response = await service.CreateOrderAsync(request, lifetime.Token);
+                id = response.Id;
+                ids.Add(id);
+                Assert.Equal(name ?? "unnamed", response.Name);
+                Assert.Equal(description, response.Description);
+            }
+            var row = await database.Orders.AsNoTracking().SingleAsync(item => item.Id == id);
+            Assert.Equal(update ? name : name ?? "unnamed", row.Name);
+            Assert.Equal(description, row.Description);
+            Assert.Equal(9002, row.ProcessId);
+            Assert.Equal(1, row.Quantity);
+            Assert.Equal(written, row.ModifiedDate);
+            if (update) Assert.Equal(preserved, TextPersistenceOtherColumns(row, true));
+            else Assert.Equal(written, row.CreatedDate);
+            Assert.Equal(before, await TextPersistenceSnapshotAsync(app, ids.ToArray()));
+        }
+
+        var overflow = string.Concat(Enumerable.Repeat("\U0001F600", maximum / 2 + 1));
+        Assert.True(overflow.Length > maximum);
+        var invalid = TextPersistenceRequest(field == "Name" ? overflow : "Control",
+            field == "Description" ? overflow : "Control description");
+        var unchanged = await TextPersistenceSnapshotAsync(app);
+        if (update)
+        {
+            // Direct service lookup priority stays distinct from the existing MVC
+            // StringLength validation, which still returns400 before HTTP lookup.
+            Assert.Equal(UpdateResult.NotFound, await service.UpdateOrderAsync(int.MaxValue, invalid, null, lifetime.Token));
+            clock.Advance(TimeSpan.FromSeconds(1));
+            Assert.Equal(UpdateResult.Conflict, await service.UpdateOrderAsync(9003,
+                TextPersistenceRequest("Valid concurrency control", "Valid concurrency control"),
+                new DateTimeOffset(2000, 1, 1, 0, 0, 0, TimeSpan.Zero), lifetime.Token));
+            Assert.Equal(unchanged, await TextPersistenceSnapshotAsync(app));
+            var deleted = await service.CreateOrderAsync(TextPersistenceRequest("Deleted control", "Deleted control"), lifetime.Token);
+            Assert.True(await service.DeleteOrderAsync(deleted.Id, lifetime.Token));
+            unchanged = await TextPersistenceSnapshotAsync(app);
+            Assert.Equal(UpdateResult.NotFound, await service.UpdateOrderAsync(deleted.Id, invalid, null, lifetime.Token));
+            Assert.Equal(unchanged, await TextPersistenceSnapshotAsync(app));
+        }
+        else
+        {
+            var operationKey = "text-control-" + Guid.NewGuid().ToString("N");
+            var retained = await service.CreateOrderAsync(
+                TextPersistenceRequest("Replay control", "Replay control") with { OperationKey = operationKey }, lifetime.Token);
+            unchanged = await TextPersistenceSnapshotAsync(app);
+            clock.Advance(TimeSpan.FromSeconds(1));
+            // Existing direct durable replay precedes new write validation.
+            Assert.Equal(retained, await service.CreateOrderAsync(invalid with { OperationKey = operationKey }, lifetime.Token));
+            Assert.Equal(unchanged, await TextPersistenceSnapshotAsync(app));
+        }
+        foreach (var rejected in new[] { overflow, new string('\u0e01', maximum + 1) })
+        {
+            var request = TextPersistenceRequest(field == "Name" ? rejected : "Control",
+                field == "Description" ? rejected : "Control description");
+            if (update)
+                await Assert.ThrowsAsync<ArgumentException>(() => service.UpdateOrderAsync(9003, request, null, lifetime.Token));
+            else
+                await Assert.ThrowsAsync<ArgumentException>(() => service.CreateOrderAsync(request, lifetime.Token));
+            Assert.Equal(unchanged, await TextPersistenceSnapshotAsync(app));
+        }
+    }
+
+    [Theory]
+    [InlineData(false, "Name")]
+    [InlineData(true, "Name")]
+    [InlineData(false, "Description")]
+    [InlineData(true, "Description")]
+    public async Task PhysicalOrderText_NullableBoundsAndSqlDefaultsRefuseOverflowWithoutMutation(bool update, string field)
+    {
+        await using var app = await AppAsync(new FakeTimeProvider());
+        await SeedTextPersistenceAsync(app);
+        await using var scope = app.Services.CreateAsyncScope();
+        var database = scope.ServiceProvider.GetRequiredService<OrderDbContext>();
+        var original = await database.Orders.AsNoTracking().SingleAsync(value => value.Id == 9003);
+        var preserved = TextPersistenceOtherColumns(original, false);
+        var ids = update ? new List<int> { 9003 } : new List<int>();
+        if (!update && field == "Name")
+        {
+            foreach (var explicitDefault in new[] { false, true })
+            {
+                var before = await TextPersistenceSnapshotAsync(app, ids.ToArray());
+                var id = await WriteOrderTextAsync(database, false, 0, null, "Control description", explicitDefault);
+                ids.Add(id);
+                var row = await database.Orders.AsNoTracking().SingleAsync(value => value.Id == id);
+                Assert.Equal("unnamed", row.Name);
+                Assert.Equal("Control description", row.Description);
+                Assert.Equal(before, await TextPersistenceSnapshotAsync(app, ids.ToArray()));
+            }
+        }
+
+        var maximum = TextPersistenceMaximum(field);
+        foreach (var value in TextPersistenceValues(maximum))
+        {
+            var before = await TextPersistenceSnapshotAsync(app, ids.ToArray());
+            var name = field == "Name" ? value : "Control";
+            var description = field == "Description" ? value : "Control description";
+            var id = await WriteOrderTextAsync(database, update, 9003, name, description);
+            if (!ids.Contains(id)) ids.Add(id);
+            var row = await database.Orders.AsNoTracking().SingleAsync(item => item.Id == id);
+            // An explicit SQLNULL is not omission/DEFAULT, even for Name.
+            Assert.Equal(name, row.Name);
+            Assert.Equal(description, row.Description);
+            Assert.Equal(9002, row.ProcessId);
+            Assert.Equal(1, row.Quantity);
+            if (update) Assert.Equal(preserved, TextPersistenceOtherColumns(row, false));
+            Assert.Equal(before, await TextPersistenceSnapshotAsync(app, ids.ToArray()));
+        }
+
+        var supplementary = string.Concat(Enumerable.Repeat("\U0001F600", maximum / 2 + 1));
+        Assert.True(supplementary.Length > maximum);
+        Assert.True(supplementary.EnumerateRunes().Count() <= maximum);
+        foreach (var rejected in new[] { supplementary, new string('\u0e01', maximum + 1) })
+        {
+            var before = await TextPersistenceSnapshotAsync(app);
+            var failure = await Assert.ThrowsAsync<PostgresException>(() => WriteOrderTextAsync(database, update, 9003,
+                field == "Name" ? rejected : "Control", field == "Description" ? rejected : "Control description"));
+            Assert.Equal("23514", failure.SqlState);
+            Assert.Equal("CK_Order_" + field + "_SourceLength", failure.ConstraintName);
+            Assert.Equal(before, await TextPersistenceSnapshotAsync(app));
+            Assert.Null(database.Database.CurrentTransaction);
+            Assert.Equal(System.Data.ConnectionState.Closed, database.Database.GetDbConnection().State);
+        }
+    }
+
+    private static int TextPersistenceMaximum(string field) => field switch
+    {
+        "Name" => 100,
+        "Description" => 250,
+        _ => throw new ArgumentOutOfRangeException(nameof(field))
+    };
+
+    private static string?[] TextPersistenceValues(int maximum) =>
+        [null, "", "  kept  ", new string('\u0e01', maximum), string.Concat(Enumerable.Repeat("\U0001F600", maximum / 2)),
+            new string('\u0e01', maximum - 2) + "  ", string.Concat(Enumerable.Repeat("\U0001F600", maximum / 2 - 1)) + "  "];
+
+    private static UpsertOrderRequest TextPersistenceRequest(string? name, string? description) =>
+        JsonSerializer.Deserialize<UpsertOrderRequest>(Payload(JsonSerializer.Serialize(name), JsonSerializer.Serialize(description)))!;
+
+    private static string TextPersistenceOtherColumns(Order row, bool ignoreModifiedDate)
+    {
+        var value = JsonSerializer.SerializeToElement(row);
+        return JsonSerializer.Serialize(value.EnumerateObject()
+            .Where(property => property.Name is not (nameof(Order.Name) or nameof(Order.Description))
+                && (!ignoreModifiedDate || property.Name != nameof(Order.ModifiedDate)))
+            .ToDictionary(property => property.Name, property => property.Value));
+    }
+
+    private static async Task SeedTextPersistenceAsync(WebApplicationFactory<Program> app)
+    {
+        await SeedAsync(app);
+        await using var scope = app.Services.CreateAsyncScope();
+        var orders = scope.ServiceProvider.GetRequiredService<OrderDbContext>();
+        orders.FileFormats.Add(new FileFormat { Id = 9005, Name = "Control format", Extension = ".step" });
+        orders.Files.Add(new OrderFile { Id = 9006, OrderId = 9004, Bucket = "control-bucket", ObjectName = "control.step" });
+        await orders.SaveChangesAsync();
+        var statuses = scope.ServiceProvider.GetRequiredService<OrderStatusDbContext>();
+        statuses.Statuses.AddRange(new OrderStatus { Id = 9007, Name = "Control stage" }, new OrderStatus { Id = 9008, Name = "Next stage" });
+        statuses.Transitions.Add(new OrderStatusTransition { Id = 9009, OrderStatusId = 9007, PossibleStatusId = 9008 });
+        statuses.History.Add(new OrderStatusHistory { Id = 9010, OrderId = 9004, OrderStatusId = 9007 });
+        await statuses.SaveChangesAsync();
+        await scope.ServiceProvider.GetRequiredService<IDistributedCache>().SetStringAsync(TextPersistenceSentinel, "unchanged",
+            new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(5) });
+    }
+
+    private static async Task<string> TextPersistenceSnapshotAsync(WebApplicationFactory<Program> app, params int[] excludedOrderIds)
+    {
+        await using var scope = app.Services.CreateAsyncScope();
+        var orders = scope.ServiceProvider.GetRequiredService<OrderDbContext>();
+        var statuses = scope.ServiceProvider.GetRequiredService<OrderStatusDbContext>();
+        return JsonSerializer.Serialize(new
+        {
+            Orders = await orders.Orders.AsNoTracking().Where(value => !excludedOrderIds.Contains(value.Id)).OrderBy(value => value.Id).ToArrayAsync(),
+            Categories = await orders.Categories.AsNoTracking().OrderBy(value => value.Id).ToArrayAsync(),
+            Processes = await orders.Processes.AsNoTracking().OrderBy(value => value.Id).ToArrayAsync(),
+            Formats = await orders.FileFormats.AsNoTracking().OrderBy(value => value.Id).ToArrayAsync(),
+            Files = await orders.Files.AsNoTracking().OrderBy(value => value.Id).ToArrayAsync(),
+            DeletionIntents = await orders.DeletionIntents.AsNoTracking().OrderBy(value => value.OrderId).ToArrayAsync(),
+            Statuses = await statuses.Statuses.AsNoTracking().OrderBy(value => value.Id).ToArrayAsync(),
+            Transitions = await statuses.Transitions.AsNoTracking().OrderBy(value => value.Id).ToArrayAsync(),
+            History = await statuses.History.AsNoTracking().OrderBy(value => value.Id).ToArrayAsync(),
+            Cache = await scope.ServiceProvider.GetRequiredService<IDistributedCache>().GetStringAsync(TextPersistenceSentinel)
+        });
+    }
+
+    private static async Task<int> WriteOrderTextAsync(OrderDbContext database, bool update, int id, string? name, string? description, bool? defaultName = null)
+    {
+        using var lifetime = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        await database.Database.OpenConnectionAsync(lifetime.Token);
+        try
+        {
+            await using var command = database.Database.GetDbConnection().CreateCommand();
+            command.CommandTimeout = 30;
+            command.CommandText = (update, defaultName) switch
+            {
+                (true, null) => """UPDATE public."Order" SET "Name"=@name,"Description"=@description WHERE "ID"=@id RETURNING "ID";""",
+                (false, null) => """INSERT INTO public."Order" ("ProcessID","Quantity","Manufactured","AllowSocialMedia","AllowCancellation","AllowPayment","Name","Description") VALUES (9002,1,0,false,false,false,@name,@description) RETURNING "ID";""",
+                (false, false) => """INSERT INTO public."Order" ("ProcessID","Quantity","Manufactured","AllowSocialMedia","AllowCancellation","AllowPayment","Description") VALUES (9002,1,0,false,false,false,@description) RETURNING "ID";""",
+                (false, true) => """INSERT INTO public."Order" ("ProcessID","Quantity","Manufactured","AllowSocialMedia","AllowCancellation","AllowPayment","Name","Description") VALUES (9002,1,0,false,false,false,DEFAULT,@description) RETURNING "ID";""",
+                _ => throw new ArgumentOutOfRangeException(nameof(defaultName))
+            };
+            if (defaultName is null) command.Parameters.Add(new NpgsqlParameter("name", NpgsqlDbType.Text) { Value = (object?)name ?? DBNull.Value, Size = -1 });
+            command.Parameters.Add(new NpgsqlParameter("description", NpgsqlDbType.Text) { Value = (object?)description ?? DBNull.Value, Size = -1 });
+            if (update) command.Parameters.Add(new NpgsqlParameter("id", NpgsqlDbType.Integer) { Value = id });
+            var result = await command.ExecuteScalarAsync(lifetime.Token);
+            return Assert.IsType<int>(result);
+        }
+        finally
+        {
+            await database.Database.CloseConnectionAsync();
+        }
+    }
 
     private Task<WebApplicationFactory<Program>> AppAsync(FakeTimeProvider clock) => fixture.AppAsync(null, configure: services =>
     {
