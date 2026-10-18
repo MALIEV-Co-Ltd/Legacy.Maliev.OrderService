@@ -4,6 +4,7 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using Legacy.Maliev.OrderService.Api.Authorization;
+using Legacy.Maliev.OrderService.Application.Interfaces;
 using Legacy.Maliev.OrderService.Application.Models;
 using Legacy.Maliev.OrderService.Data;
 using Legacy.Maliev.OrderService.Domain;
@@ -13,6 +14,8 @@ using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Time.Testing;
+using Npgsql;
+using NpgsqlTypes;
 
 namespace Legacy.Maliev.OrderService.Tests.Controllers;
 
@@ -255,6 +258,232 @@ public sealed class OrderFileLiteralHttpTests(OrderDeletionReadinessFixture fixt
         using var response = update ? await PutAsync(writer, original.Id, Payload(true, "123")) : await writer.PostAsync(Query(9003, " metadata ", " drawing.step "), null);
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
         Assert.Equal(before, await SnapshotAsync(app));
+    }
+
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task BucketUtf16BoundaryRetainsLiteralRetryOwnerAndUnboundedObjectName(bool update, bool supplementary)
+    {
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 10, 18, 0, 0, 0, TimeSpan.Zero));
+        await using var app = await AppAsync(clock);
+        await SeedAsync(app);
+        using var writer = Client(app, OrderPermissions.FilesWrite);
+        using var reader = Client(app, OrderPermissions.FilesRead);
+        var original = update ? await CreateAsync(writer, "control", "control.step") : null;
+        var ids = original is null ? new List<int>() : new List<int> { original.Id };
+        var exact = supplementary ? string.Concat(Enumerable.Repeat("\U0001F600", 25)) : new string('\u0e01', 50);
+        var padded = supplementary ? string.Concat(Enumerable.Repeat("\U0001F600", 24)) + "  " : new string('\u0e01', 48) + "  ";
+        Assert.Equal(50, exact.Length);
+        Assert.Equal(50, padded.Length);
+        var objectName = SourceUnboundedObjectName();
+        Assert.True(objectName.Length > 250);
+        OrderFileResponse? last = null;
+        foreach (var bucket in new[] { "  literal metadata  ", exact, padded })
+        {
+            var before = await SnapshotAsync(app, ids.ToArray());
+            clock.Advance(TimeSpan.FromSeconds(1));
+            var writeTime = clock.GetUtcNow().UtcDateTime;
+            OrderFileResponse current;
+            if (update)
+            {
+                using var response = await PutAsync(writer, original!.Id, BucketPayload(9003, bucket, objectName));
+                Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+                current = (await reader.GetFromJsonAsync<OrderFileResponse>($"/orders/files/{original!.Id}"))!;
+                Assert.Equal(original!.CreatedDate, current.CreatedDate);
+            }
+            else
+            {
+                current = await CreateAsync(writer, bucket, objectName);
+                ids.Add(current.Id);
+                var beforeRetry = await SnapshotAsync(app);
+                clock.Advance(TimeSpan.FromSeconds(1));
+                Assert.Equal(current, await CreateAsync(writer, bucket, objectName));
+                Assert.Equal(beforeRetry, await SnapshotAsync(app));
+            }
+            Assert.Equal(9003, current.OrderId);
+            Assert.Equal(writeTime, current.ModifiedDate);
+            await AssertReadbackAsync(app, reader, current, bucket, objectName);
+            Assert.Equal(before, await SnapshotAsync(app, ids.ToArray()));
+            last = current;
+        }
+
+        var overflow = supplementary ? string.Concat(Enumerable.Repeat("\U0001F600", 26)) : new string('\u0e01', 51);
+        Assert.True(overflow.Length > 50);
+        var unchanged = await SnapshotAsync(app);
+        using var invalid = update
+            ? await PutAsync(writer, original!.Id, BucketPayload(9011, overflow, objectName))
+            : await writer.PostAsync(Query(9003, overflow, objectName), null);
+        // Existing safe-boundary adaptation: HTTP400, not a claim about the
+        // original SQL Server overflow response.
+        Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
+        Assert.Equal(unchanged, await SnapshotAsync(app));
+        if (!update)
+        {
+            Assert.NotNull(last);
+            clock.Advance(TimeSpan.FromSeconds(1));
+            Assert.Equal(last, await CreateAsync(writer, padded, objectName));
+            Assert.Equal(unchanged, await SnapshotAsync(app));
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task DirectBucketOverflowRefusesWithoutMetadataOrOwnerChanges(bool update)
+    {
+        await using var app = await AppAsync();
+        await SeedAsync(app);
+        using var writer = Client(app, OrderPermissions.FilesWrite);
+        var original = await CreateAsync(writer, "control", "control.step");
+        var before = await SnapshotAsync(app);
+        var overflow = string.Concat(Enumerable.Repeat("\U0001F600", 26));
+        Assert.Equal(52, overflow.Length);
+        await using var scope = app.Services.CreateAsyncScope();
+        var service = scope.ServiceProvider.GetRequiredService<IOrderService>();
+        using var lifetime = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        if (update)
+            await Assert.ThrowsAsync<ArgumentException>(() => service.UpdateFileAsync(
+                original.Id, new UpsertOrderFileRequest(9011, overflow, SourceUnboundedObjectName()), lifetime.Token));
+        else
+            await Assert.ThrowsAsync<ArgumentException>(() => service.CreateFileAsync(
+                9003, overflow, SourceUnboundedObjectName(), lifetime.Token));
+        Assert.Equal(before, await SnapshotAsync(app));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PhysicalBucketRequiredUtf16BoundaryPreservesUnboundedObjectName(bool update)
+    {
+        await using var app = await AppAsync();
+        await SeedAsync(app);
+        using var writer = Client(app, OrderPermissions.FilesWrite);
+        var original = await CreateAsync(writer, "control", "control.step");
+        var ids = new List<int> { original.Id };
+        await using var scope = app.Services.CreateAsyncScope();
+        var database = scope.ServiceProvider.GetRequiredService<OrderDbContext>();
+        var objectName = SourceUnboundedObjectName();
+        var beforeNull = await SnapshotAsync(app);
+        var required = await Assert.ThrowsAsync<PostgresException>(() =>
+            WriteBucketAsync(database, update, original.Id, null, objectName));
+        Assert.Equal("23502", required.SqlState);
+        Assert.Equal("Bucket", required.ColumnName);
+        Assert.Equal(beforeNull, await SnapshotAsync(app));
+
+        foreach (var bucket in new[] { "", "  literal  ", new string('\u0e01', 50), string.Concat(Enumerable.Repeat("\U0001F600", 25)) })
+        {
+            var before = await SnapshotAsync(app, ids.ToArray());
+            var id = await WriteBucketAsync(database, update, original.Id, bucket, objectName);
+            if (!ids.Contains(id)) ids.Add(id);
+            var row = await database.Files.AsNoTracking().SingleAsync(value => value.Id == id);
+            Assert.Equal(9003, row.OrderId);
+            Assert.Equal(bucket, row.Bucket);
+            Assert.Equal(objectName, row.ObjectName);
+            Assert.Equal(before, await SnapshotAsync(app, ids.ToArray()));
+        }
+
+        var overflow = string.Concat(Enumerable.Repeat("\U0001F600", 26));
+        Assert.Equal(52, overflow.Length);
+        Assert.Equal(26, overflow.EnumerateRunes().Count());
+        var unchanged = await SnapshotAsync(app);
+        var failure = await Assert.ThrowsAsync<PostgresException>(() =>
+            WriteBucketAsync(database, update, original.Id, overflow, objectName));
+        Assert.Equal("23514", failure.SqlState);
+        Assert.Equal("CK_OrderFile_Bucket_SourceLength", failure.ConstraintName);
+        Assert.Equal(unchanged, await SnapshotAsync(app));
+        Assert.Null(database.Database.CurrentTransaction);
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task BucketOverflowCannotBypassAnonymousOrReadOnlyAuthority(bool update, bool anonymous)
+    {
+        await using var app = await AppAsync();
+        await SeedAsync(app);
+        using var owner = Client(app, OrderPermissions.FilesWrite);
+        var original = await CreateAsync(owner, "control", "control.step");
+        using var client = anonymous ? app.CreateClient() : Client(app, OrderPermissions.FilesRead);
+        var before = await SnapshotAsync(app);
+        var overflow = string.Concat(Enumerable.Repeat("\U0001F600", 26));
+        using var response = update
+            ? await PutAsync(client, original.Id, BucketPayload(9011, overflow, SourceUnboundedObjectName()))
+            : await client.PostAsync(Query(9003, overflow, SourceUnboundedObjectName()), null);
+        Assert.Equal(anonymous ? HttpStatusCode.Unauthorized : HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(before, await SnapshotAsync(app));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task MissingOwnerOrFilePrecedesBucketOverflowValidation(bool update)
+    {
+        await using var app = await AppAsync();
+        await SeedAsync(app);
+        using var writer = Client(app, OrderPermissions.FilesWrite);
+        var before = await SnapshotAsync(app);
+        var overflow = string.Concat(Enumerable.Repeat("\U0001F600", 26));
+        using var response = update
+            ? await PutAsync(writer, int.MaxValue, BucketPayload(9003, overflow, SourceUnboundedObjectName()))
+            : await writer.PostAsync(Query(int.MaxValue, overflow, SourceUnboundedObjectName()), null);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Equal(before, await SnapshotAsync(app));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task DeletedLifetimePrecedesBucketOverflowAndCannotBeResurrected(bool update)
+    {
+        await using var app = await AppAsync(recoveryEnabled: true);
+        await SeedAsync(app);
+        using var writer = Client(app, OrderPermissions.FilesWrite);
+        using var deleter = Client(app, OrderPermissions.Delete);
+        var original = await CreateAsync(writer, "control", "control.step");
+        using var deleted = await deleter.DeleteAsync("/orders/9003");
+        Assert.Equal(HttpStatusCode.NoContent, deleted.StatusCode);
+        var before = await SnapshotAsync(app);
+        var overflow = string.Concat(Enumerable.Repeat("\U0001F600", 26));
+        using var response = update
+            ? await PutAsync(writer, original.Id, BucketPayload(9003, overflow, SourceUnboundedObjectName()))
+            : await writer.PostAsync(Query(9003, overflow, SourceUnboundedObjectName()), null);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Equal(before, await SnapshotAsync(app));
+    }
+
+    private static string SourceUnboundedObjectName() =>
+        "  drawings/" + new string('\u0e01', 512) + string.Concat(Enumerable.Repeat("\U0001F600", 26)) + ".step  ";
+
+    private static string BucketPayload(int owner, string bucket, string objectName) =>
+        JsonSerializer.Serialize(new { OrderId = owner, Bucket = bucket, ObjectName = objectName });
+
+    private static async Task<int> WriteBucketAsync(OrderDbContext database, bool update, int id, string? bucket, string objectName)
+    {
+        using var lifetime = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        await database.Database.OpenConnectionAsync(lifetime.Token);
+        try
+        {
+            await using var command = database.Database.GetDbConnection().CreateCommand();
+            command.CommandTimeout = 30;
+            command.CommandText = update
+                ? """UPDATE public."OrderFile" SET "Bucket"=@bucket,"ObjectName"=@objectName WHERE "ID"=@id RETURNING "ID";"""
+                : """INSERT INTO public."OrderFile" ("OrderID","Bucket","ObjectName") VALUES (9003,@bucket,@objectName) RETURNING "ID";""";
+            command.Parameters.Add(new NpgsqlParameter("bucket", NpgsqlDbType.Text) { Value = (object?)bucket ?? DBNull.Value, Size = -1 });
+            command.Parameters.Add(new NpgsqlParameter("objectName", NpgsqlDbType.Text) { Value = objectName, Size = -1 });
+            if (update) command.Parameters.Add(new NpgsqlParameter("id", NpgsqlDbType.Integer) { Value = id });
+            var result = await command.ExecuteScalarAsync(lifetime.Token);
+            return Assert.IsType<int>(result);
+        }
+        finally
+        {
+            await database.Database.CloseConnectionAsync();
+        }
     }
 
     private Task<WebApplicationFactory<Program>> AppAsync(FakeTimeProvider? clock = null, bool recoveryEnabled = false) => fixture.AppAsync(null, recoveryEnabled: recoveryEnabled, configure: services =>
