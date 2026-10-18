@@ -173,7 +173,7 @@ public sealed class ProcessSourceNameMigrationTests(OrderDeletionReadinessFixtur
             Assert.Equal(before, await SnapshotAsync(owned.Context));
             await AssertFailureSessionRestoredAsync(owned.Context, session);
             Assert.True(await ScalarAsync<bool>(owned.Context, "SELECT to_regclass('pg_temp.\"__ProcessSourceNameGuard\"') IS NULL"));
-        });
+        }, Target);
     }
 
     [Fact]
@@ -218,7 +218,7 @@ public sealed class ProcessSourceNameMigrationTests(OrderDeletionReadinessFixtur
             Assert.Equal("P0001", failure.SqlState);
             Assert.Equal(before, await SnapshotAsync(owned.Context));
             await AssertFailureSessionRestoredAsync(owned.Context, session);
-        });
+        }, Target);
     }
 
     [Fact]
