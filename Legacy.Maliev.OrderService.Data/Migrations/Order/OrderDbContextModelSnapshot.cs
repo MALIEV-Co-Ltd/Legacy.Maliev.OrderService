@@ -58,11 +58,14 @@ namespace Legacy.Maliev.OrderService.Data.Migrations.Order
 
                     b.Property<string>("Name")
                         .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
+                        .HasColumnType("text");
 
                     b.HasKey("Id");
 
-                    b.ToTable("Category", (string)null);
+                    b.ToTable("Category", (string)null, t =>
+                        {
+                            t.HasCheckConstraint("CK_Category_Name_SourceLength", "char_length(\"Name\") + char_length(regexp_replace(\"Name\" COLLATE \"C\", U&'[\\0001-\\FFFF]', '', 'g')) <= 50");
+                        });
                 });
 
             modelBuilder.Entity("Legacy.Maliev.OrderService.Domain.FileFormat", b =>
@@ -81,7 +84,7 @@ namespace Legacy.Maliev.OrderService.Data.Migrations.Order
 
                     b.Property<string>("Extension")
                         .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
+                        .HasColumnType("text");
 
                     b.Property<DateTime?>("ModifiedDate")
                         .ValueGeneratedOnAdd()
@@ -90,11 +93,15 @@ namespace Legacy.Maliev.OrderService.Data.Migrations.Order
 
                     b.Property<string>("Name")
                         .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
+                        .HasColumnType("text");
 
                     b.HasKey("Id");
 
-                    b.ToTable("FileFormat", (string)null);
+                    b.ToTable("FileFormat", (string)null, t =>
+                        {
+                            t.HasCheckConstraint("CK_FileFormat_Name_SourceLength", "char_length(\"Name\") + char_length(regexp_replace(\"Name\" COLLATE \"C\", U&'[\\0001-\\FFFF]', '', 'g')) <= 50");
+                            t.HasCheckConstraint("CK_FileFormat_Extension_SourceLength", "char_length(\"Extension\") + char_length(regexp_replace(\"Extension\" COLLATE \"C\", U&'[\\0001-\\FFFF]', '', 'g')) <= 50");
+                        });
                 });
 
             modelBuilder.Entity("Legacy.Maliev.OrderService.Domain.Order", b =>

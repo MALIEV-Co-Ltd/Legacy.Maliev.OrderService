@@ -173,7 +173,7 @@ public sealed class ProcessSourceNameMigrationTests(OrderDeletionReadinessFixtur
             Assert.Equal(before, await SnapshotAsync(owned.Context));
             await AssertFailureSessionRestoredAsync(owned.Context, session);
             Assert.True(await ScalarAsync<bool>(owned.Context, "SELECT to_regclass('pg_temp.\"__ProcessSourceNameGuard\"') IS NULL"));
-        });
+        }, Target);
     }
 
     [Fact]
@@ -218,7 +218,7 @@ public sealed class ProcessSourceNameMigrationTests(OrderDeletionReadinessFixtur
             Assert.Equal("P0001", failure.SqlState);
             Assert.Equal(before, await SnapshotAsync(owned.Context));
             await AssertFailureSessionRestoredAsync(owned.Context, session);
-        });
+        }, Target);
     }
 
     [Fact]
@@ -269,6 +269,76 @@ public sealed class ProcessSourceNameMigrationTests(OrderDeletionReadinessFixtur
             Assert.Equal(before.Rows, (await SnapshotAsync(owned.Context)).Rows);
         }, Previous);
     }
+
+    [Theory]
+    [InlineData("Category", "Name")]
+    [InlineData("FileFormat", "Name")]
+    [InlineData("FileFormat", "Extension")]
+    public async Task NullableCatalogUpDownUpPreservesWholeGraphAndUtf16Padding(string table, string field)
+    {
+        await RunOwnedAsync(async owned =>
+        {
+            await SeedAsync(owned.Context);
+            await ExecuteAsync(owned.Context, """
+                INSERT INTO public."Category" ("ID","Name") VALUES (2,NULL),(3,'');
+                INSERT INTO public."FileFormat" ("ID","Name","Extension") VALUES (2,NULL,NULL),(3,'','');
+                """);
+            var exact = string.Concat(Enumerable.Repeat("😀", 24)) + "  ";
+            Assert.Equal(50, exact.Length);
+            await SetNullableCatalogAsync(owned.Context, table, field, exact);
+            var before = await SnapshotAsync(owned.Context);
+            var session = await FailureSessionAsync(owned.Context);
+            await MigrateAsync(owned.Context, "20261018100000_EnforceNullableCatalogSourceStrings");
+            Assert.Equal(before.Rows, (await SnapshotAsync(owned.Context)).Rows);
+            Assert.False(owned.Context.Database.HasPendingModelChanges());
+            Assert.Equal(3L, await ScalarAsync<long>(owned.Context, """
+                SELECT count(*) FROM pg_constraint
+                WHERE conrelid IN ('public."Category"'::regclass,'public."FileFormat"'::regclass)
+                AND conname IN ('CK_Category_Name_SourceLength','CK_FileFormat_Name_SourceLength','CK_FileFormat_Extension_SourceLength')
+                AND contype='c' AND convalidated AND conislocal AND coninhcount=0 AND NOT connoinherit
+                """));
+            var upgraded = await SnapshotAsync(owned.Context);
+            await MigrateAsync(owned.Context, Target);
+            Assert.Equal(before, await SnapshotAsync(owned.Context));
+            await MigrateAsync(owned.Context, "20261018100000_EnforceNullableCatalogSourceStrings");
+            Assert.Equal(upgraded, await SnapshotAsync(owned.Context));
+            await AssertFailureSessionRestoredAsync(owned.Context, session);
+            Assert.True(await ScalarAsync<bool>(owned.Context, "SELECT to_regclass('pg_temp.\"__NullableCatalogSourceStringsGuard\"') IS NULL"));
+        }, Target);
+    }
+
+    [Theory]
+    [InlineData("Category", "Name")]
+    [InlineData("FileFormat", "Name")]
+    [InlineData("FileFormat", "Extension")]
+    public async Task NullableCatalogRetainedSupplementaryOverflowRefusesAtomicUpgrade(string table, string field)
+    {
+        await RunOwnedAsync(async owned =>
+        {
+            await SeedAsync(owned.Context);
+            var invalid = string.Concat(Enumerable.Repeat("😀", 26));
+            Assert.Equal(52, invalid.Length);
+            Assert.Equal(26, invalid.EnumerateRunes().Count());
+            await SetNullableCatalogAsync(owned.Context, table, field, invalid);
+            var before = await SnapshotAsync(owned.Context);
+            var session = await FailureSessionAsync(owned.Context);
+            var failure = await Assert.ThrowsAsync<PostgresException>(() =>
+                MigrateAsync(owned.Context, "20261018100000_EnforceNullableCatalogSourceStrings"));
+            Assert.Equal("P0001", failure.SqlState);
+            Assert.Equal(before, await SnapshotAsync(owned.Context));
+            await AssertFailureSessionRestoredAsync(owned.Context, session);
+            Assert.True(await ScalarAsync<bool>(owned.Context, "SELECT to_regclass('pg_temp.\"__NullableCatalogSourceStringsGuard\"') IS NULL"));
+        }, Target);
+    }
+
+    private static Task SetNullableCatalogAsync(OrderDbContext context, string table, string field, string? value) =>
+        ExecuteAsync(context, (table, field) switch
+        {
+            ("Category", "Name") => "UPDATE public.\"Category\" SET \"Name\"=@value WHERE \"ID\"=1",
+            ("FileFormat", "Name") => "UPDATE public.\"FileFormat\" SET \"Name\"=@value WHERE \"ID\"=1",
+            ("FileFormat", "Extension") => "UPDATE public.\"FileFormat\" SET \"Extension\"=@value WHERE \"ID\"=1",
+            _ => throw new ArgumentOutOfRangeException(nameof(field))
+        }, new NpgsqlParameter("value", NpgsqlDbType.Text) { Value = (object?)value ?? DBNull.Value, Size = -1 });
 
     private sealed record FailureSession(string LockTimeout, string StatementTimeout);
     private static async Task<FailureSession> FailureSessionAsync(OrderDbContext context)
