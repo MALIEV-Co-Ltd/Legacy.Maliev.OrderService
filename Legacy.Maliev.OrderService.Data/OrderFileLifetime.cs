@@ -44,6 +44,7 @@ public sealed partial class OrderRepository
         WithLifetimeAsync<OrderFileResponse?>([orderId], async (o, _, _) =>
         {
             if (await IsDeletedLifetimeAsync(o, orderId, c) || !await o.Orders.AnyAsync(x => x.Id == orderId, c)) return null;
+            OrderFileSourceConstraints.ValidateBucket(bucket);
             var literalBucket = bucket;
             var literalObjectName = objectName;
             var lockIdentity = $"order-file\n{orderId}\n{literalBucket}\n{literalObjectName}";
@@ -93,6 +94,7 @@ public sealed partial class OrderRepository
                 var row = await o.Files.SingleOrDefaultAsync(x => x.Id == id, c);
                 if (row is null || row.OrderId != original.Value) return false;
                 if (await IsDeletedLifetimeAsync(o, original.Value, c) || await IsDeletedLifetimeAsync(o, destination, c)) return false;
+                OrderFileSourceConstraints.ValidateBucket(r.Bucket);
                 row.OrderId = destination;
                 row.Bucket = r.Bucket;
                 row.ObjectName = r.ObjectName;
