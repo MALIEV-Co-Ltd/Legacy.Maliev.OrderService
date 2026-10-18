@@ -243,7 +243,7 @@ namespace Legacy.Maliev.OrderService.Data.Migrations.Order
                     b.Property<string>("Bucket")
                         .IsRequired()
                         .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
+                        .HasColumnType("text");
 
                     b.Property<DateTime?>("CreatedDate")
                         .ValueGeneratedOnAdd()
@@ -267,7 +267,10 @@ namespace Legacy.Maliev.OrderService.Data.Migrations.Order
 
                     b.HasIndex("OrderId");
 
-                    b.ToTable("OrderFile", (string)null);
+                    b.ToTable("OrderFile", (string)null, t =>
+                        {
+                            t.HasCheckConstraint("CK_OrderFile_Bucket_SourceLength", "char_length(\"Bucket\") + char_length(regexp_replace(\"Bucket\" COLLATE \"C\", U&'[\\0001-\\FFFF]', '', 'g')) <= 50");
+                        });
                 });
 
             modelBuilder.Entity("Legacy.Maliev.OrderService.Domain.Process", b =>
