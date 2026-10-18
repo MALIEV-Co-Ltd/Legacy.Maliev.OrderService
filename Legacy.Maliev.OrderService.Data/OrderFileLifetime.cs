@@ -28,6 +28,7 @@ public sealed partial class OrderRepository
             if (await IsDeletedLifetimeAsync(o, id, c)) return UpdateResult.NotFound;
             var row = await o.Orders.SingleOrDefaultAsync(x => x.Id == id, c);
             if (row is null) return UpdateResult.NotFound;
+            OrderTextSourceConstraints.Validate(r);
             if (expected is not null) o.Entry(row).Property(x => x.ModifiedDate).OriginalValue = DateTime.SpecifyKind(expected.Value.UtcDateTime, DateTimeKind.Unspecified);
             var accepted = await s.History.Where(x => x.OrderId == id).OrderByDescending(x => x.Id)
                 .Select(x => EF.Functions.ILike(x.OrderStatus!.Name!, "Accepted")).FirstOrDefaultAsync(c);

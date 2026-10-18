@@ -144,7 +144,7 @@ namespace Legacy.Maliev.OrderService.Data.Migrations.Order
 
                     b.Property<string>("Description")
                         .HasMaxLength(250)
-                        .HasColumnType("character varying(250)");
+                        .HasColumnType("text");
 
                     b.Property<decimal?>("DiscountPercent")
                         .HasPrecision(5, 2)
@@ -176,7 +176,7 @@ namespace Legacy.Maliev.OrderService.Data.Migrations.Order
                     b.Property<string>("Name")
                         .ValueGeneratedOnAdd()
                         .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
+                        .HasColumnType("text")
                         .HasDefaultValue("unnamed");
 
                     b.Property<string>("OperationKey")
@@ -228,7 +228,11 @@ namespace Legacy.Maliev.OrderService.Data.Migrations.Order
 
                     b.HasIndex("ProcessId");
 
-                    b.ToTable("Order", (string)null);
+                    b.ToTable("Order", (string)null, t =>
+                        {
+                            t.HasCheckConstraint("CK_Order_Name_SourceLength", "char_length(\"Name\") + char_length(regexp_replace(\"Name\" COLLATE \"C\", U&'[\\0001-\\FFFF]', '', 'g')) <= 100");
+                            t.HasCheckConstraint("CK_Order_Description_SourceLength", "char_length(\"Description\") + char_length(regexp_replace(\"Description\" COLLATE \"C\", U&'[\\0001-\\FFFF]', '', 'g')) <= 250");
+                        });
                 });
 
             modelBuilder.Entity("Legacy.Maliev.OrderService.Domain.OrderFile", b =>

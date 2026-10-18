@@ -17,6 +17,7 @@ public sealed partial class OrderRepository(OrderDbContext orders, OrderStatusDb
             return replay;
         }
 
+        OrderTextSourceConstraints.Validate(r);
         var n = Now();
         var entity = Map(new Order(), r);
         entity.CreatedDate = n;

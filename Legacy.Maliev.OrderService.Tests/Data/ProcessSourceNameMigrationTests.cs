@@ -467,6 +467,188 @@ public sealed class ProcessSourceNameMigrationTests(OrderDeletionReadinessFixtur
     private static async Task AssertBucketSourceTempAbsentAsync(OrderDbContext context) =>
         Assert.True(await ScalarAsync<bool>(context, "SELECT to_regclass('pg_temp.\"__OrderFileBucketSourceGuard\"') IS NULL"));
 
+    private const string OrderTextSourcePrevious = "20261018110000_EnforceOrderFileBucketSourceLength";
+    private const string OrderTextSourceTarget = "20261018120000_EnforceNullableOrderTextSourceLengths";
+
+    [Fact]
+    public async Task OrderTextSourceUpDownUpPreservesNullableDefaultsModelAndWholeGraph()
+    {
+        await RunOwnedAsync(async owned =>
+        {
+            await SeedAsync(owned.Context);
+            await ExecuteAsync(owned.Context, """
+                INSERT INTO public."Order" ("ID","ProcessID","Name","Description","Quantity","Manufactured","AllowSocialMedia","AllowCancellation","AllowPayment")
+                VALUES (2,1,NULL,NULL,1,0,false,true,false),(3,1,'','',1,0,false,true,false),
+                       (4,1,@name,@description,1,0,false,true,false),(5,1,@paddedName,@paddedDescription,1,0,false,true,false);
+                """, new NpgsqlParameter("name", NpgsqlDbType.Text) { Value = string.Concat(Enumerable.Repeat("\U0001F600", 50)), Size = -1 },
+                new NpgsqlParameter("description", NpgsqlDbType.Text) { Value = string.Concat(Enumerable.Repeat("\U0001F600", 125)), Size = -1 },
+                new NpgsqlParameter("paddedName", NpgsqlDbType.Text) { Value = string.Concat(Enumerable.Repeat("\U0001F600", 49)) + "  ", Size = -1 },
+                new NpgsqlParameter("paddedDescription", NpgsqlDbType.Text) { Value = string.Concat(Enumerable.Repeat("\U0001F600", 124)) + "  ", Size = -1 });
+            var before = await SnapshotAsync(owned.Context);
+            var session = await FailureSessionAsync(owned.Context);
+            await MigrateAsync(owned.Context, OrderTextSourceTarget);
+            Assert.Equal(before.Rows, (await SnapshotAsync(owned.Context)).Rows);
+            Assert.False(owned.Context.Database.HasPendingModelChanges());
+            var snapshot = owned.Context.GetService<IMigrationsAssembly>().ModelSnapshot;
+            Assert.NotNull(snapshot);
+            foreach (var model in new[] { owned.Context.GetService<IDesignTimeModel>().Model, snapshot.Model })
+            {
+                var entity = model.FindEntityType(typeof(Legacy.Maliev.OrderService.Domain.Order).FullName!);
+                Assert.NotNull(entity);
+                foreach (var field in new[] { "Name", "Description" })
+                {
+                    var property = entity.FindProperty(field);
+                    Assert.NotNull(property);
+                    Assert.True(property.IsNullable);
+                    Assert.Equal(OrderTextSourceMaximum(field), property.GetMaxLength());
+                    Assert.Equal("text", property.GetColumnType());
+                    Assert.Equal(LengthSql(field, OrderTextSourceMaximum(field)),
+                        Assert.Single(entity.GetCheckConstraints(), value => value.Name == OrderTextSourceCheck(field)).Sql.Trim());
+                    if (field == "Name")
+                    {
+                        Assert.Equal("unnamed", property.GetDefaultValue());
+                        Assert.Equal(ValueGenerated.OnAdd, property.ValueGenerated);
+                    }
+                    else
+                    {
+                        Assert.Null(property.FindAnnotation(RelationalAnnotationNames.DefaultValue));
+                        Assert.Null(property.GetDefaultValueSql());
+                    }
+                }
+            }
+            var upgraded = await SnapshotAsync(owned.Context);
+            await MigrateAsync(owned.Context, OrderTextSourcePrevious);
+            Assert.Equal(before, await SnapshotAsync(owned.Context));
+            await MigrateAsync(owned.Context, OrderTextSourceTarget);
+            Assert.Equal(upgraded, await SnapshotAsync(owned.Context));
+            await AssertFailureSessionRestoredAsync(owned.Context, session);
+            await AssertOrderTextSourceTempAbsentAsync(owned.Context);
+        }, OrderTextSourcePrevious);
+    }
+
+    [Theory]
+    [InlineData("Name")]
+    [InlineData("Description")]
+    public async Task OrderTextSourceRetainedSupplementaryOverflowRefusesAtomicUpgrade(string field)
+    {
+        await RunOwnedAsync(async owned =>
+        {
+            await SeedAsync(owned.Context);
+            var invalid = string.Concat(Enumerable.Repeat("\U0001F600", OrderTextSourceMaximum(field) / 2 + 1));
+            Assert.True(invalid.Length > OrderTextSourceMaximum(field));
+            Assert.True(invalid.EnumerateRunes().Count() <= OrderTextSourceMaximum(field));
+            await SetOrderTextSourceAsync(owned.Context, field, invalid);
+            var before = await SnapshotAsync(owned.Context);
+            var session = await FailureSessionAsync(owned.Context);
+            var failure = await Assert.ThrowsAsync<PostgresException>(() => MigrateAsync(owned.Context, OrderTextSourceTarget));
+            Assert.Equal("P0001", failure.SqlState);
+            Assert.Equal(before, await SnapshotAsync(owned.Context));
+            await AssertFailureSessionRestoredAsync(owned.Context, session);
+            await AssertOrderTextSourceTempAbsentAsync(owned.Context);
+        }, OrderTextSourcePrevious);
+    }
+
+    [Theory]
+    [InlineData(false, "Name", false)]
+    [InlineData(false, "Name", true)]
+    [InlineData(false, "Description", false)]
+    [InlineData(true, "Name", false)]
+    [InlineData(true, "Name", true)]
+    [InlineData(true, "Description", false)]
+    public async Task OrderTextSourceDefaultDriftRefusesAtomicMigration(bool downgrade, string field, bool missing)
+    {
+        await RunOwnedAsync(async owned =>
+        {
+            await SeedAsync(owned.Context);
+            _ = OrderTextSourceMaximum(field);
+            await ExecuteAsync(owned.Context, missing
+                ? "ALTER TABLE public.\"Order\" ALTER COLUMN \"Name\" DROP DEFAULT"
+                : "ALTER TABLE public.\"Order\" ALTER COLUMN " + Quote(field) + " SET DEFAULT 'changed'");
+            var before = await SnapshotAsync(owned.Context);
+            var session = await FailureSessionAsync(owned.Context);
+            var failure = await Assert.ThrowsAsync<PostgresException>(() =>
+                MigrateAsync(owned.Context, downgrade ? OrderTextSourcePrevious : OrderTextSourceTarget));
+            Assert.Equal("P0001", failure.SqlState);
+            Assert.Equal(before, await SnapshotAsync(owned.Context));
+            await AssertFailureSessionRestoredAsync(owned.Context, session);
+            await AssertOrderTextSourceTempAbsentAsync(owned.Context);
+        }, downgrade ? OrderTextSourceTarget : OrderTextSourcePrevious);
+    }
+
+    [Theory]
+    [InlineData("Name", false)]
+    [InlineData("Name", true)]
+    [InlineData("Description", false)]
+    [InlineData("Description", true)]
+    public async Task OrderTextSourceMissingOrWrongOwnedCheckRefusesAtomicDowngrade(string field, bool wrong)
+    {
+        await RunOwnedAsync(async owned =>
+        {
+            await SeedAsync(owned.Context);
+            var check = Quote(OrderTextSourceCheck(field));
+            await ExecuteAsync(owned.Context, "ALTER TABLE public.\"Order\" DROP CONSTRAINT " + check);
+            if (wrong) await ExecuteAsync(owned.Context, "ALTER TABLE public.\"Order\" ADD CONSTRAINT " + check + " CHECK (true)");
+            var before = await SnapshotAsync(owned.Context);
+            var session = await FailureSessionAsync(owned.Context);
+            var failure = await Assert.ThrowsAsync<PostgresException>(() => MigrateAsync(owned.Context, OrderTextSourcePrevious));
+            Assert.Equal("P0001", failure.SqlState);
+            Assert.Equal(before, await SnapshotAsync(owned.Context));
+            await AssertFailureSessionRestoredAsync(owned.Context, session);
+            await AssertOrderTextSourceTempAbsentAsync(owned.Context);
+        }, OrderTextSourceTarget);
+    }
+
+    [Theory]
+    [InlineData("Name", false)]
+    [InlineData("Name", true)]
+    [InlineData("Description", false)]
+    [InlineData("Description", true)]
+    public async Task OrderTextSourceInvalidRetainedRowsRefuseAtomicDowngrade(string field, bool supplementary)
+    {
+        await RunOwnedAsync(async owned =>
+        {
+            await SeedAsync(owned.Context);
+            var check = Quote(OrderTextSourceCheck(field));
+            await ExecuteAsync(owned.Context, "ALTER TABLE public.\"Order\" DROP CONSTRAINT " + check);
+            var maximum = OrderTextSourceMaximum(field);
+            var invalid = supplementary ? string.Concat(Enumerable.Repeat("\U0001F600", maximum / 2 + 1)) : new string('\u0e01', maximum + 1);
+            await SetOrderTextSourceAsync(owned.Context, field, invalid);
+            await ExecuteAsync(owned.Context, "ALTER TABLE public.\"Order\" ADD CONSTRAINT " + check + " CHECK (" + LengthSql(field, maximum) + ") NOT VALID");
+            Assert.Equal(invalid, await ScalarAsync<string>(owned.Context, "SELECT " + Quote(field) + " FROM public.\"Order\" WHERE \"ID\"=1"));
+            var before = await SnapshotAsync(owned.Context);
+            var session = await FailureSessionAsync(owned.Context);
+            var failure = await Assert.ThrowsAsync<PostgresException>(() => MigrateAsync(owned.Context, OrderTextSourcePrevious));
+            Assert.Equal("P0001", failure.SqlState);
+            Assert.Equal(before, await SnapshotAsync(owned.Context));
+            await AssertFailureSessionRestoredAsync(owned.Context, session);
+            await AssertOrderTextSourceTempAbsentAsync(owned.Context);
+        }, OrderTextSourceTarget);
+    }
+
+    private static int OrderTextSourceMaximum(string field) => field switch
+    {
+        "Name" => 100,
+        "Description" => 250,
+        _ => throw new ArgumentOutOfRangeException(nameof(field))
+    };
+
+    private static string OrderTextSourceCheck(string field)
+    {
+        _ = OrderTextSourceMaximum(field);
+        return "CK_Order_" + field + "_SourceLength";
+    }
+
+    private static Task SetOrderTextSourceAsync(OrderDbContext context, string field, string value) =>
+        ExecuteAsync(context, field switch
+        {
+            "Name" => "UPDATE public.\"Order\" SET \"Name\"=@value WHERE \"ID\"=1",
+            "Description" => "UPDATE public.\"Order\" SET \"Description\"=@value WHERE \"ID\"=1",
+            _ => throw new ArgumentOutOfRangeException(nameof(field))
+        }, new NpgsqlParameter("value", NpgsqlDbType.Text) { Value = value, Size = -1 });
+
+    private static async Task AssertOrderTextSourceTempAbsentAsync(OrderDbContext context) =>
+        Assert.True(await ScalarAsync<bool>(context, "SELECT to_regclass('pg_temp.\"__OrderTextSourceGuard\"') IS NULL"));
+
     private sealed record FailureSession(string LockTimeout, string StatementTimeout);
     private static async Task<FailureSession> FailureSessionAsync(OrderDbContext context)
     {
