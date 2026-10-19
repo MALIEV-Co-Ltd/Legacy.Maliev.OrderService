@@ -344,13 +344,13 @@ public sealed class OrderPrivateRequestObservationHttpTests
             ObservationEvent? value = frameworkCategory && level == LogLevel.Error
                 && eventId.Id == 1 && eventId.Name == "UnhandledException"
                 ? ObservationEvent.FrameworkError : name switch
-            {
-                "ObservabilityPipelineProbe" when level == LogLevel.Warning => ObservationEvent.Probe,
-                "UnhandledRequestFailure" when level == LogLevel.Critical => ObservationEvent.Unhandled,
-                "HandledOperationFailure" when level == LogLevel.Error => ObservationEvent.Handled,
-                "HealthProbeFailure" when level == LogLevel.Error => ObservationEvent.HealthFailure,
-                _ => null
-            };
+                {
+                    "ObservabilityPipelineProbe" when level == LogLevel.Warning => ObservationEvent.Probe,
+                    "UnhandledRequestFailure" when level == LogLevel.Critical => ObservationEvent.Unhandled,
+                    "HandledOperationFailure" when level == LogLevel.Error => ObservationEvent.Handled,
+                    "HealthProbeFailure" when level == LogLevel.Error => ObservationEvent.HealthFailure,
+                    _ => null
+                };
             if (value is null) return;
             lock (gate)
             {
