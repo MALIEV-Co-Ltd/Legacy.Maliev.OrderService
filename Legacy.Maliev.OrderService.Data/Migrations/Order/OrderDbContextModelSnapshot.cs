@@ -22,21 +22,6 @@ namespace Legacy.Maliev.OrderService.Data.Migrations.Order
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
-            modelBuilder.Entity("Legacy.Maliev.OrderService.Domain.OrderDeletionIntent", b =>
-                {
-                    b.Property<int>("OrderId").HasColumnType("integer");
-                    b.Property<int>("AttemptCount").HasColumnType("integer");
-                    b.Property<DateTime?>("CompletedAtUtc").HasColumnType("timestamp with time zone");
-                    b.Property<Guid>("DeletionId").HasColumnType("uuid");
-                    b.Property<DateTime>("NextAttemptAtUtc").HasColumnType("timestamp with time zone");
-                    b.Property<DateTime>("RequestedAtUtc").HasColumnType("timestamp with time zone");
-                    b.Property<DateTime?>("StatusCleanupCompletedAtUtc").HasColumnType("timestamp with time zone");
-                    b.HasKey("OrderId");
-                    b.HasIndex("DeletionId").IsUnique();
-                    b.HasIndex("NextAttemptAtUtc", "OrderId").HasDatabaseName("IX_OrderDeletionIntent_PendingDue").HasFilter("\"CompletedAtUtc\" IS NULL");
-                    b.ToTable("OrderDeletionIntent", t => t.HasCheckConstraint("CK_OrderDeletionIntent_AttemptCount", "\"AttemptCount\" >= 0"));
-                });
-
             modelBuilder.Entity("Legacy.Maliev.OrderService.Domain.Category", b =>
                 {
                     b.Property<int>("Id")
@@ -235,6 +220,44 @@ namespace Legacy.Maliev.OrderService.Data.Migrations.Order
                         });
                 });
 
+            modelBuilder.Entity("Legacy.Maliev.OrderService.Domain.OrderDeletionIntent", b =>
+                {
+                    b.Property<int>("OrderId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("AttemptCount")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("CompletedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("DeletionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("NextAttemptAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("RequestedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("StatusCleanupCompletedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("OrderId");
+
+                    b.HasIndex("DeletionId")
+                        .IsUnique();
+
+                    b.HasIndex("NextAttemptAtUtc", "OrderId")
+                        .HasDatabaseName("IX_OrderDeletionIntent_PendingDue")
+                        .HasFilter("\"CompletedAtUtc\" IS NULL");
+
+                    b.ToTable("OrderDeletionIntent", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_OrderDeletionIntent_AttemptCount", "\"AttemptCount\" >= 0");
+                        });
+                });
+
             modelBuilder.Entity("Legacy.Maliev.OrderService.Domain.OrderFile", b =>
                 {
                     b.Property<int>("Id")
@@ -315,6 +338,93 @@ namespace Legacy.Maliev.OrderService.Data.Migrations.Order
                         });
                 });
 
+            modelBuilder.Entity("Legacy.Maliev.OrderService.Domain.Replacement.ReplacementAffectedRow", b =>
+                {
+                    b.Property<int>("CaseId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("OrderId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("CaseId", "OrderId");
+
+                    b.HasIndex("OrderId");
+
+                    b.ToTable("ReplacementAffectedOrder", (string)null);
+                });
+
+            modelBuilder.Entity("Legacy.Maliev.OrderService.Domain.Replacement.ReplacementCaseRow", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("CommandsJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<int>("CustomerId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("EvidenceJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("OriginalsJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<int>("Reason")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset>("ReportedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("ReportedBy")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Revision")
+                        .IsConcurrencyToken()
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CustomerId");
+
+                    b.ToTable("ReplacementCase", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_ReplacementCase_Identity", "\"CustomerId\" > 0 AND \"ReportedBy\" > 0 AND \"Revision\" > 0");
+                        });
+                });
+
+            modelBuilder.Entity("Legacy.Maliev.OrderService.Domain.Replacement.ReplacementOperationRow", b =>
+                {
+                    b.Property<int>("EmployeeId")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("OperationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("CaseId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("PayloadHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<int>("ResultRevision")
+                        .HasColumnType("integer");
+
+                    b.HasKey("EmployeeId", "OperationId");
+
+                    b.HasIndex("CaseId");
+
+                    b.ToTable("ReplacementOperation", (string)null);
+                });
+
             modelBuilder.Entity("Legacy.Maliev.OrderService.Domain.Order", b =>
                 {
                     b.HasOne("Legacy.Maliev.OrderService.Domain.Process", "Process")
@@ -349,6 +459,30 @@ namespace Legacy.Maliev.OrderService.Data.Migrations.Order
                         .HasConstraintName("FK_Process_Category");
 
                     b.Navigation("Category");
+                });
+
+            modelBuilder.Entity("Legacy.Maliev.OrderService.Domain.Replacement.ReplacementAffectedRow", b =>
+                {
+                    b.HasOne("Legacy.Maliev.OrderService.Domain.Replacement.ReplacementCaseRow", null)
+                        .WithMany()
+                        .HasForeignKey("CaseId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Legacy.Maliev.OrderService.Domain.Order", null)
+                        .WithMany()
+                        .HasForeignKey("OrderId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Legacy.Maliev.OrderService.Domain.Replacement.ReplacementOperationRow", b =>
+                {
+                    b.HasOne("Legacy.Maliev.OrderService.Domain.Replacement.ReplacementCaseRow", null)
+                        .WithMany()
+                        .HasForeignKey("CaseId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Legacy.Maliev.OrderService.Domain.Category", b =>

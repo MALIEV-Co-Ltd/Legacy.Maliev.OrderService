@@ -10,6 +10,7 @@ public sealed class OrderDbContext(DbContextOptions<OrderDbContext> options) : D
     public DbSet<Order> Orders => Set<Order>(); public DbSet<Process> Processes => Set<Process>(); public DbSet<Category> Categories => Set<Category>(); public DbSet<FileFormat> FileFormats => Set<FileFormat>(); public DbSet<OrderFile> Files => Set<OrderFile>();
     protected override void OnModelCreating(ModelBuilder b)
     {
+        Replacement.ReplacementModelConfiguration.Apply(b);
         var intent = b.Entity<OrderDeletionIntent>();
         intent.ToTable("OrderDeletionIntent", t => t.HasCheckConstraint("CK_OrderDeletionIntent_AttemptCount", "\"AttemptCount\" >= 0"));
         intent.HasKey(x => x.OrderId);
