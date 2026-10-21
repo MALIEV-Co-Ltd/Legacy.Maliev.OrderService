@@ -35,7 +35,7 @@ public sealed class OrderOriginalInputHttpTests(OrderDeletionReadinessFixture fi
         using var writer = Client(app, WritePermission(kind));
         using var response = await SendAsync(writer, kind, update, Payload(kind));
         Assert.Equal(update ? HttpStatusCode.NoContent : HttpStatusCode.Created, response.StatusCode);
-        var id = update ? Id(kind) : await CreatedIdAsync(response);
+        var id = update ? Id(kind) : await CreatedIdAsync(response, kind);
         await AssertStoredAsync(app, kind, id);
         Assert.Equal(before, await SnapshotAsync(app, kind, id));
         if (!update)
@@ -45,7 +45,7 @@ public sealed class OrderOriginalInputHttpTests(OrderDeletionReadinessFixture fi
             using var fresh = await reader.GetAsync(response.Headers.Location);
             Assert.Equal(HttpStatusCode.OK, fresh.StatusCode);
             using var wire = JsonDocument.Parse(await fresh.Content.ReadAsStringAsync());
-            Assert.Equal(id, wire.RootElement.GetProperty("Id").GetInt32());
+            Assert.Equal(id, wire.RootElement.GetProperty(kind == "format" ? "id" : "Id").GetInt32());
             Assert.False(wire.RootElement.TryGetProperty("Process", out _));
             Assert.False(wire.RootElement.TryGetProperty("OrderStatusHistory", out _));
         }
@@ -62,7 +62,7 @@ public sealed class OrderOriginalInputHttpTests(OrderDeletionReadinessFixture fi
         // Native source string reading preserves the hexadecimal lexeme, not its numeric value.
         using var response = await SendAsync(writer, kind, update, "/*source*/" + payload);
         Assert.Equal(update ? HttpStatusCode.NoContent : HttpStatusCode.Created, response.StatusCode);
-        var id = update ? Id(kind) : await CreatedIdAsync(response);
+        var id = update ? Id(kind) : await CreatedIdAsync(response, kind);
         await AssertStoredAsync(app, kind, id, kind is "file" or "history" ? "kept" : "0x10");
     }
 
@@ -253,7 +253,7 @@ public sealed class OrderOriginalInputHttpTests(OrderDeletionReadinessFixture fi
         using var content = new StringContent(Payload("category"), Encoding.Unicode, "application/json");
         using var response = await writer.PostAsync("/orders/categories", content);
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
-        await AssertStoredAsync(app, "category", await CreatedIdAsync(response));
+        await AssertStoredAsync(app, "category", await CreatedIdAsync(response, "category"));
     }
 
     [Fact]
@@ -303,10 +303,10 @@ public sealed class OrderOriginalInputHttpTests(OrderDeletionReadinessFixture fi
         using var content = new StringContent(payload, Encoding.UTF8, "application/json");
         return update ? await client.PutAsync(Route(kind) + "/" + Id(kind), content) : await client.PostAsync(Route(kind), content);
     }
-    private static async Task<int> CreatedIdAsync(HttpResponseMessage response)
+    private static async Task<int> CreatedIdAsync(HttpResponseMessage response, string kind)
     {
         using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        return json.RootElement.GetProperty("Id").GetInt32();
+        return json.RootElement.GetProperty(kind == "format" ? "id" : "Id").GetInt32();
     }
     private static async Task AssertStoredAsync(WebApplicationFactory<Program> app, string kind, int id, string expected = "kept")
     {

@@ -79,7 +79,12 @@ public sealed record UpsertOrderRequest(
     [param: StringLength(128)] string? OperationKey = null);
 public sealed record ProcessResponse(int Id, int CategoryId, string Name, DateTime? CreatedDate, DateTime? ModifiedDate); public sealed record UpsertProcessRequest(int CategoryId, [property: JsonConverter(typeof(ProcessScalarStringJsonConverter))] string Name);
 public sealed record CategoryResponse(int Id, string? Name, DateTime? CreatedDate, DateTime? ModifiedDate); public sealed record UpsertCategoryRequest([property: JsonConverter(typeof(CategoryScalarStringJsonConverter))] string? Name);
-public sealed record FileFormatResponse(int Id, string? Name, string? Extension, DateTime? CreatedDate, DateTime? ModifiedDate); public sealed record UpsertFileFormatRequest([property: JsonConverter(typeof(FileFormatScalarStringJsonConverter))] string? Name, [property: JsonConverter(typeof(FileFormatScalarStringJsonConverter))] string? Extension);
+public sealed record FileFormatResponse(
+    [property: JsonPropertyName("id")] int Id,
+    [property: JsonPropertyName("name")] string? Name,
+    [property: JsonPropertyName("extension")] string? Extension,
+    [property: JsonPropertyName("createdDate")] DateTime? CreatedDate,
+    [property: JsonPropertyName("modifiedDate")] DateTime? ModifiedDate); public sealed record UpsertFileFormatRequest([property: JsonConverter(typeof(FileFormatScalarStringJsonConverter))] string? Name, [property: JsonConverter(typeof(FileFormatScalarStringJsonConverter))] string? Extension);
 public sealed record OrderFileResponse(int Id, int OrderId, string Bucket, string ObjectName, DateTime? CreatedDate, DateTime? ModifiedDate);
 /// <summary>Bucket and object metadata for an owned order; no object upload is performed.</summary>
 /// <example>{"OrderId":42,"Bucket":"metadata-bucket","ObjectName":"drawings/part.step"}</example>
