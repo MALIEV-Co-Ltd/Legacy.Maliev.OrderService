@@ -37,22 +37,28 @@ public sealed class OrderLatestStatusDateSourceHttpTests(OrderDeletionReadinessF
         await statuses.SaveChangesAsync();
         var first = new OrderStatusHistory
         {
-            OrderId = orderId, OrderStatusId = older.Id,
-            CreatedDate = new DateTime(2025, 1, 1), ModifiedDate = new DateTime(2025, 1, 2),
+            OrderId = orderId,
+            OrderStatusId = older.Id,
+            CreatedDate = new DateTime(2025, 1, 1),
+            ModifiedDate = new DateTime(2025, 1, 2),
         };
         statuses.History.Add(first);
         await statuses.SaveChangesAsync();
         var last = new OrderStatusHistory
         {
-            OrderId = orderId, OrderStatusId = latest.Id,
-            CreatedDate = new DateTime(2024, 1, 1), ModifiedDate = new DateTime(2024, 1, 2),
+            OrderId = orderId,
+            OrderStatusId = latest.Id,
+            CreatedDate = new DateTime(2024, 1, 1),
+            ModifiedDate = new DateTime(2024, 1, 2),
         };
         statuses.History.Add(last);
         await statuses.SaveChangesAsync();
         statuses.History.Add(new OrderStatusHistory
         {
-            OrderId = orderId + 1, OrderStatusId = unrelated.Id,
-            CreatedDate = new DateTime(2026, 1, 1), ModifiedDate = new DateTime(2026, 1, 2),
+            OrderId = orderId + 1,
+            OrderStatusId = unrelated.Id,
+            CreatedDate = new DateTime(2026, 1, 1),
+            ModifiedDate = new DateTime(2026, 1, 2),
         });
         await statuses.SaveChangesAsync();
         if (nullDefinitionDates)
