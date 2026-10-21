@@ -61,7 +61,7 @@ public sealed class OrderFileFormatScalarStringHttpTests(OrderDeletionReadinessF
         using var fresh = await reader.GetAsync($"/orders/fileformats/{id}");
         Assert.Equal(HttpStatusCode.OK, fresh.StatusCode);
         using var wire = JsonDocument.Parse(await fresh.Content.ReadAsStringAsync());
-        foreach (var field in new[] { "Name", "Extension" })
+        foreach (var field in new[] { "name", "extension" })
         {
             if (expected is null) Assert.False(wire.RootElement.TryGetProperty(field, out _));
             else
