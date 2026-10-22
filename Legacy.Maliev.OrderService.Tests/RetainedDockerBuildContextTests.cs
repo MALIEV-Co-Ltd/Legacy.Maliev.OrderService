@@ -111,9 +111,13 @@ public sealed class RetainedDockerBuildContextTests(ITestOutputHelper output)
             {
                 var owner = new
                 {
-                    owned, purpose = "retained Docker context proof directory",
-                    expires = directoryExpiry, commandRuns = retainedCommandRuns.ToArray(),
-                    reason, persistentData = false, reobserveBeforeRecovery = true,
+                    owned,
+                    purpose = "retained Docker context proof directory",
+                    expires = directoryExpiry,
+                    commandRuns = retainedCommandRuns.ToArray(),
+                    reason,
+                    persistentData = false,
+                    reobserveBeforeRecovery = true,
                 };
                 RetainedDirectories[owned] = owner;
                 try { output.WriteLine(JsonSerializer.Serialize(owner)); }
@@ -401,7 +405,13 @@ public sealed class RetainedDockerBuildContextTests(ITestOutputHelper output)
             {
                 RetainedCommands[run] = new
                 {
-                    process, work, stdout, stderr, identity, handle, expires,
+                    process,
+                    work,
+                    stdout,
+                    stderr,
+                    identity,
+                    handle,
+                    expires,
                     purpose = "retained Docker context proof command",
                     arguments = arguments.ToArray(),
                 };
