@@ -12,7 +12,7 @@ PROFILES = {
                     '8e34d0208be9312ab0b94dc8db7800d7c12d86a2', 30,
                     'ecb05cbbd68717e415f69df2ac488c1d323b1da3'),
     'order': ('MALIEV-Co-Ltd/Legacy.Maliev.OrderService',
-              '4297f695f93f2cb312979b0c0c35bf662e22dd48', 44,
+              'cb57f8f198e9fff1a2ef170fc1856be80b18c5c0', 5,
               '7edcd961024868513fd5f373cab3dcb261197f77'),
 }
 COMPATIBILITY = '78e48ffc4ee000df0510cba5e7c7a3c4c4d539d7'

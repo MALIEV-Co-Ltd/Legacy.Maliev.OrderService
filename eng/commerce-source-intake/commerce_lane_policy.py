@@ -1,4 +1,4 @@
 # Independently reviewed exact caller bindings; no runtime overrides.
 LANE = 'order'
-POLICY_SHA256 = '027218ff9f5ddf87dd6d8afec7ea376b25826822925ddc970fe08eb44ba5c542'
-CAPSULE_GIT_BLOB = '289bb7dffeeeebecb20ee30fa1763a48a4506095'
+POLICY_SHA256 = '1ca89b123287c6bf365be35a9f4def0d993b4a30d39a9f7256e92e6bb9e41390'
+CAPSULE_GIT_BLOB = 'ed42bb597b70b2bcf3b27054cc1c71f1f6d39a47'

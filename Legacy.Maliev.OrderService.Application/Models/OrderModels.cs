@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json.Serialization;
 namespace Legacy.Maliev.OrderService.Application.Models;
 
 /// <summary>An order snapshot with scalar service references and persisted computed values.</summary>
@@ -56,8 +57,8 @@ public sealed record OrderResponse(int Id, int? CustomerId, int? EmployeeId, str
 public sealed record UpsertOrderRequest(
     int? CustomerId,
     int? EmployeeId,
-    [param: StringLength(100)] string? Name,
-    [param: StringLength(250)] string? Description,
+    [param: StringLength(100)][property: JsonConverter(typeof(OrderStatusScalarStringJsonConverter))] string? Name,
+    [param: StringLength(250)][property: JsonConverter(typeof(OrderStatusScalarStringJsonConverter))] string? Description,
     int ProcessId,
     int? MaterialId,
     int? SurfaceFinishId,
@@ -76,17 +77,22 @@ public sealed record UpsertOrderRequest(
     bool AllowPayment,
     string? TrackingNumber,
     [param: StringLength(128)] string? OperationKey = null);
-public sealed record ProcessResponse(int Id, int CategoryId, string Name, DateTime? CreatedDate, DateTime? ModifiedDate); public sealed record UpsertProcessRequest(int CategoryId, string Name);
-public sealed record CategoryResponse(int Id, string? Name, DateTime? CreatedDate, DateTime? ModifiedDate); public sealed record UpsertCategoryRequest(string? Name);
-public sealed record FileFormatResponse(int Id, string? Name, string? Extension, DateTime? CreatedDate, DateTime? ModifiedDate); public sealed record UpsertFileFormatRequest(string? Name, string? Extension);
+public sealed record ProcessResponse(int Id, int CategoryId, string Name, DateTime? CreatedDate, DateTime? ModifiedDate); public sealed record UpsertProcessRequest(int CategoryId, [property: JsonConverter(typeof(ProcessScalarStringJsonConverter))] string Name);
+public sealed record CategoryResponse(int Id, string? Name, DateTime? CreatedDate, DateTime? ModifiedDate); public sealed record UpsertCategoryRequest([property: JsonConverter(typeof(CategoryScalarStringJsonConverter))] string? Name);
+public sealed record FileFormatResponse(
+    [property: JsonPropertyName("id")] int Id,
+    [property: JsonPropertyName("name")] string? Name,
+    [property: JsonPropertyName("extension")] string? Extension,
+    [property: JsonPropertyName("createdDate")] DateTime? CreatedDate,
+    [property: JsonPropertyName("modifiedDate")] DateTime? ModifiedDate); public sealed record UpsertFileFormatRequest([property: JsonConverter(typeof(FileFormatScalarStringJsonConverter))] string? Name, [property: JsonConverter(typeof(FileFormatScalarStringJsonConverter))] string? Extension);
 public sealed record OrderFileResponse(int Id, int OrderId, string Bucket, string ObjectName, DateTime? CreatedDate, DateTime? ModifiedDate);
 /// <summary>Bucket and object metadata for an owned order; no object upload is performed.</summary>
 /// <example>{"OrderId":42,"Bucket":"metadata-bucket","ObjectName":"drawings/part.step"}</example>
-/// <param name="OrderId">Optional owner identifier; omission preserves the existing owner.</param>
+/// <param name="OrderId">Source HTTP omission or null binds zero; direct DTO callers may pass null to preserve the existing owner.</param>
 /// <param name="Bucket">Storage bucket name.</param>
 /// <param name="ObjectName">Storage object name.</param>
-public sealed record UpsertOrderFileRequest(int? OrderId, string Bucket, string ObjectName);
-public sealed record OrderStatusResponse(int Id, string? Name, string? Description, DateTime? CreatedDate, DateTime? ModifiedDate); public sealed record UpsertOrderStatusRequest(string? Name, string? Description);
+public sealed record UpsertOrderFileRequest(int? OrderId, [property: JsonConverter(typeof(OrderFileScalarStringJsonConverter))] string Bucket, [property: JsonConverter(typeof(OrderFileScalarStringJsonConverter))] string ObjectName);
+public sealed record OrderStatusResponse(int Id, string? Name, string? Description, DateTime? CreatedDate, DateTime? ModifiedDate); public sealed record UpsertOrderStatusRequest([property: JsonConverter(typeof(OrderStatusScalarStringJsonConverter))] string? Name, [property: JsonConverter(typeof(OrderStatusScalarStringJsonConverter))] string? Description);
 public sealed record OrderStatusHistoryResponse(int Id, int OrderId, int OrderStatusId, string? Name, string? Description, DateTime? CreatedDate, DateTime? ModifiedDate); public sealed record UpsertOrderStatusHistoryRequest(int OrderId, int OrderStatusId);
 public sealed record CustomerOrderDetails(OrderResponse Order, ProcessResponse? Process, IReadOnlyList<OrderStatusHistoryResponse> History, IReadOnlyList<OrderFileResponse> Files);
 public sealed record PaginatedResponse<T>(IReadOnlyList<T> Items, int PageIndex, int TotalPages, int TotalRecords) { public bool HasNextPage => PageIndex < TotalPages; public bool HasPreviousPage => PageIndex > 1; }
