@@ -58,11 +58,14 @@ namespace Legacy.Maliev.OrderService.Data.Migrations.Order
 
                     b.Property<string>("Name")
                         .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
+                        .HasColumnType("text");
 
                     b.HasKey("Id");
 
-                    b.ToTable("Category", (string)null);
+                    b.ToTable("Category", (string)null, t =>
+                        {
+                            t.HasCheckConstraint("CK_Category_Name_SourceLength", "char_length(\"Name\") + char_length(regexp_replace(\"Name\" COLLATE \"C\", U&'[\\0001-\\FFFF]', '', 'g')) <= 50");
+                        });
                 });
 
             modelBuilder.Entity("Legacy.Maliev.OrderService.Domain.FileFormat", b =>
@@ -81,7 +84,7 @@ namespace Legacy.Maliev.OrderService.Data.Migrations.Order
 
                     b.Property<string>("Extension")
                         .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
+                        .HasColumnType("text");
 
                     b.Property<DateTime?>("ModifiedDate")
                         .ValueGeneratedOnAdd()
@@ -90,11 +93,15 @@ namespace Legacy.Maliev.OrderService.Data.Migrations.Order
 
                     b.Property<string>("Name")
                         .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
+                        .HasColumnType("text");
 
                     b.HasKey("Id");
 
-                    b.ToTable("FileFormat", (string)null);
+                    b.ToTable("FileFormat", (string)null, t =>
+                        {
+                            t.HasCheckConstraint("CK_FileFormat_Name_SourceLength", "char_length(\"Name\") + char_length(regexp_replace(\"Name\" COLLATE \"C\", U&'[\\0001-\\FFFF]', '', 'g')) <= 50");
+                            t.HasCheckConstraint("CK_FileFormat_Extension_SourceLength", "char_length(\"Extension\") + char_length(regexp_replace(\"Extension\" COLLATE \"C\", U&'[\\0001-\\FFFF]', '', 'g')) <= 50");
+                        });
                 });
 
             modelBuilder.Entity("Legacy.Maliev.OrderService.Domain.Order", b =>
@@ -137,7 +144,7 @@ namespace Legacy.Maliev.OrderService.Data.Migrations.Order
 
                     b.Property<string>("Description")
                         .HasMaxLength(250)
-                        .HasColumnType("character varying(250)");
+                        .HasColumnType("text");
 
                     b.Property<decimal?>("DiscountPercent")
                         .HasPrecision(5, 2)
@@ -169,7 +176,7 @@ namespace Legacy.Maliev.OrderService.Data.Migrations.Order
                     b.Property<string>("Name")
                         .ValueGeneratedOnAdd()
                         .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
+                        .HasColumnType("text")
                         .HasDefaultValue("unnamed");
 
                     b.Property<string>("OperationKey")
@@ -221,7 +228,11 @@ namespace Legacy.Maliev.OrderService.Data.Migrations.Order
 
                     b.HasIndex("ProcessId");
 
-                    b.ToTable("Order", (string)null);
+                    b.ToTable("Order", (string)null, t =>
+                        {
+                            t.HasCheckConstraint("CK_Order_Name_SourceLength", "char_length(\"Name\") + char_length(regexp_replace(\"Name\" COLLATE \"C\", U&'[\\0001-\\FFFF]', '', 'g')) <= 100");
+                            t.HasCheckConstraint("CK_Order_Description_SourceLength", "char_length(\"Description\") + char_length(regexp_replace(\"Description\" COLLATE \"C\", U&'[\\0001-\\FFFF]', '', 'g')) <= 250");
+                        });
                 });
 
             modelBuilder.Entity("Legacy.Maliev.OrderService.Domain.OrderFile", b =>
@@ -236,7 +247,7 @@ namespace Legacy.Maliev.OrderService.Data.Migrations.Order
                     b.Property<string>("Bucket")
                         .IsRequired()
                         .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
+                        .HasColumnType("text");
 
                     b.Property<DateTime?>("CreatedDate")
                         .ValueGeneratedOnAdd()
@@ -260,7 +271,10 @@ namespace Legacy.Maliev.OrderService.Data.Migrations.Order
 
                     b.HasIndex("OrderId");
 
-                    b.ToTable("OrderFile", (string)null);
+                    b.ToTable("OrderFile", (string)null, t =>
+                        {
+                            t.HasCheckConstraint("CK_OrderFile_Bucket_SourceLength", "char_length(\"Bucket\") + char_length(regexp_replace(\"Bucket\" COLLATE \"C\", U&'[\\0001-\\FFFF]', '', 'g')) <= 50");
+                        });
                 });
 
             modelBuilder.Entity("Legacy.Maliev.OrderService.Domain.Process", b =>

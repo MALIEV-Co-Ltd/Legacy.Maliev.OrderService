@@ -173,7 +173,7 @@ public sealed class ProcessSourceNameMigrationTests(OrderDeletionReadinessFixtur
             Assert.Equal(before, await SnapshotAsync(owned.Context));
             await AssertFailureSessionRestoredAsync(owned.Context, session);
             Assert.True(await ScalarAsync<bool>(owned.Context, "SELECT to_regclass('pg_temp.\"__ProcessSourceNameGuard\"') IS NULL"));
-        });
+        }, Target);
     }
 
     [Fact]
@@ -218,7 +218,7 @@ public sealed class ProcessSourceNameMigrationTests(OrderDeletionReadinessFixtur
             Assert.Equal("P0001", failure.SqlState);
             Assert.Equal(before, await SnapshotAsync(owned.Context));
             await AssertFailureSessionRestoredAsync(owned.Context, session);
-        });
+        }, Target);
     }
 
     [Fact]
@@ -269,6 +269,385 @@ public sealed class ProcessSourceNameMigrationTests(OrderDeletionReadinessFixtur
             Assert.Equal(before.Rows, (await SnapshotAsync(owned.Context)).Rows);
         }, Previous);
     }
+
+    [Theory]
+    [InlineData("Category", "Name")]
+    [InlineData("FileFormat", "Name")]
+    [InlineData("FileFormat", "Extension")]
+    public async Task NullableCatalogUpDownUpPreservesWholeGraphAndUtf16Padding(string table, string field)
+    {
+        await RunOwnedAsync(async owned =>
+        {
+            await SeedAsync(owned.Context);
+            await ExecuteAsync(owned.Context, """
+                INSERT INTO public."Category" ("ID","Name") VALUES (2,NULL),(3,'');
+                INSERT INTO public."FileFormat" ("ID","Name","Extension") VALUES (2,NULL,NULL),(3,'','');
+                """);
+            var exact = string.Concat(Enumerable.Repeat("😀", 24)) + "  ";
+            Assert.Equal(50, exact.Length);
+            await SetNullableCatalogAsync(owned.Context, table, field, exact);
+            var before = await SnapshotAsync(owned.Context);
+            var session = await FailureSessionAsync(owned.Context);
+            await MigrateAsync(owned.Context, "20261018100000_EnforceNullableCatalogSourceStrings");
+            Assert.Equal(before.Rows, (await SnapshotAsync(owned.Context)).Rows);
+            Assert.False(owned.Context.Database.HasPendingModelChanges());
+            Assert.Equal(3L, await ScalarAsync<long>(owned.Context, """
+                SELECT count(*) FROM pg_constraint
+                WHERE conrelid IN ('public."Category"'::regclass,'public."FileFormat"'::regclass)
+                AND conname IN ('CK_Category_Name_SourceLength','CK_FileFormat_Name_SourceLength','CK_FileFormat_Extension_SourceLength')
+                AND contype='c' AND convalidated AND conislocal AND coninhcount=0 AND NOT connoinherit
+                """));
+            var upgraded = await SnapshotAsync(owned.Context);
+            await MigrateAsync(owned.Context, Target);
+            Assert.Equal(before, await SnapshotAsync(owned.Context));
+            await MigrateAsync(owned.Context, "20261018100000_EnforceNullableCatalogSourceStrings");
+            Assert.Equal(upgraded, await SnapshotAsync(owned.Context));
+            await AssertFailureSessionRestoredAsync(owned.Context, session);
+            Assert.True(await ScalarAsync<bool>(owned.Context, "SELECT to_regclass('pg_temp.\"__NullableCatalogSourceStringsGuard\"') IS NULL"));
+        }, Target);
+    }
+
+    [Theory]
+    [InlineData("Category", "Name")]
+    [InlineData("FileFormat", "Name")]
+    [InlineData("FileFormat", "Extension")]
+    public async Task NullableCatalogRetainedSupplementaryOverflowRefusesAtomicUpgrade(string table, string field)
+    {
+        await RunOwnedAsync(async owned =>
+        {
+            await SeedAsync(owned.Context);
+            var invalid = string.Concat(Enumerable.Repeat("😀", 26));
+            Assert.Equal(52, invalid.Length);
+            Assert.Equal(26, invalid.EnumerateRunes().Count());
+            await SetNullableCatalogAsync(owned.Context, table, field, invalid);
+            var before = await SnapshotAsync(owned.Context);
+            var session = await FailureSessionAsync(owned.Context);
+            var failure = await Assert.ThrowsAsync<PostgresException>(() =>
+                MigrateAsync(owned.Context, "20261018100000_EnforceNullableCatalogSourceStrings"));
+            Assert.Equal("P0001", failure.SqlState);
+            Assert.Equal(before, await SnapshotAsync(owned.Context));
+            await AssertFailureSessionRestoredAsync(owned.Context, session);
+            Assert.True(await ScalarAsync<bool>(owned.Context, "SELECT to_regclass('pg_temp.\"__NullableCatalogSourceStringsGuard\"') IS NULL"));
+        }, Target);
+    }
+
+    private static Task SetNullableCatalogAsync(OrderDbContext context, string table, string field, string? value) =>
+        ExecuteAsync(context, (table, field) switch
+        {
+            ("Category", "Name") => "UPDATE public.\"Category\" SET \"Name\"=@value WHERE \"ID\"=1",
+            ("FileFormat", "Name") => "UPDATE public.\"FileFormat\" SET \"Name\"=@value WHERE \"ID\"=1",
+            ("FileFormat", "Extension") => "UPDATE public.\"FileFormat\" SET \"Extension\"=@value WHERE \"ID\"=1",
+            _ => throw new ArgumentOutOfRangeException(nameof(field))
+        }, new NpgsqlParameter("value", NpgsqlDbType.Text) { Value = (object?)value ?? DBNull.Value, Size = -1 });
+
+    private const string BucketSourcePrevious = "20261018100000_EnforceNullableCatalogSourceStrings";
+    private const string BucketSourceTarget = "20261018110000_EnforceOrderFileBucketSourceLength";
+
+    [Fact]
+    public async Task BucketSourceUpDownUpRetainsRequiredLengthUnboundedObjectAndWholeGraph()
+    {
+        await RunOwnedAsync(async owned =>
+        {
+            await SeedAsync(owned.Context);
+            var exact = string.Concat(Enumerable.Repeat("\U0001F600", 25));
+            var padded = string.Concat(Enumerable.Repeat("\U0001F600", 24)) + "  ";
+            Assert.Equal(50, exact.Length);
+            Assert.Equal(50, padded.Length);
+            var objectName = "  drawings/" + new string('\u0e01', 512) + ".step  ";
+            await ExecuteAsync(owned.Context, """
+                INSERT INTO public."OrderFile" ("ID","OrderID","Bucket","ObjectName") VALUES (2,1,'',@objectName),(3,1,@exact,@objectName);
+                """, new NpgsqlParameter("objectName", NpgsqlDbType.Text) { Value = objectName, Size = -1 },
+                new NpgsqlParameter("exact", NpgsqlDbType.Text) { Value = exact, Size = -1 });
+            await SetBucketSourceAsync(owned.Context, padded);
+            var before = await SnapshotAsync(owned.Context);
+            var session = await FailureSessionAsync(owned.Context);
+            await MigrateAsync(owned.Context, BucketSourceTarget);
+            Assert.Equal(before.Rows, (await SnapshotAsync(owned.Context)).Rows);
+            Assert.False(owned.Context.Database.HasPendingModelChanges());
+            var snapshot = owned.Context.GetService<IMigrationsAssembly>().ModelSnapshot;
+            Assert.NotNull(snapshot);
+            foreach (var model in new[] { owned.Context.GetService<IDesignTimeModel>().Model, snapshot.Model })
+            {
+                var entity = model.FindEntityType(typeof(OrderFile).FullName!);
+                Assert.NotNull(entity);
+                var bucket = entity.FindProperty("Bucket");
+                Assert.NotNull(bucket);
+                Assert.False(bucket.IsNullable);
+                Assert.Equal(50, bucket.GetMaxLength());
+                Assert.Equal("text", bucket.GetColumnType());
+                Assert.Equal(LengthSql("Bucket", 50), Assert.Single(entity.GetCheckConstraints(),
+                    value => value.Name == "CK_OrderFile_Bucket_SourceLength").Sql.Trim());
+                var name = entity.FindProperty("ObjectName");
+                Assert.NotNull(name);
+                Assert.False(name.IsNullable);
+                Assert.Null(name.GetMaxLength());
+                Assert.Equal("text", name.GetColumnType());
+            }
+            Assert.True(await ScalarAsync<bool>(owned.Context, """
+                SELECT convalidated AND conislocal AND coninhcount=0 AND NOT connoinherit FROM pg_constraint
+                WHERE conrelid='public."OrderFile"'::regclass AND conname='CK_OrderFile_Bucket_SourceLength' AND contype='c'
+                """));
+            var upgraded = await SnapshotAsync(owned.Context);
+            await MigrateAsync(owned.Context, BucketSourcePrevious);
+            Assert.Equal(before, await SnapshotAsync(owned.Context));
+            await MigrateAsync(owned.Context, BucketSourceTarget);
+            Assert.Equal(upgraded, await SnapshotAsync(owned.Context));
+            await AssertFailureSessionRestoredAsync(owned.Context, session);
+            await AssertBucketSourceTempAbsentAsync(owned.Context);
+        }, BucketSourcePrevious);
+    }
+
+    [Fact]
+    public async Task BucketSourceRetainedSupplementaryOverflowRefusesAtomicUpgrade()
+    {
+        await RunOwnedAsync(async owned =>
+        {
+            await SeedAsync(owned.Context);
+            var invalid = string.Concat(Enumerable.Repeat("\U0001F600", 26));
+            Assert.Equal(52, invalid.Length);
+            Assert.Equal(26, invalid.EnumerateRunes().Count());
+            await SetBucketSourceAsync(owned.Context, invalid);
+            var before = await SnapshotAsync(owned.Context);
+            var session = await FailureSessionAsync(owned.Context);
+            var failure = await Assert.ThrowsAsync<PostgresException>(() => MigrateAsync(owned.Context, BucketSourceTarget));
+            Assert.Equal("P0001", failure.SqlState);
+            Assert.Equal(before, await SnapshotAsync(owned.Context));
+            await AssertFailureSessionRestoredAsync(owned.Context, session);
+            await AssertBucketSourceTempAbsentAsync(owned.Context);
+        }, BucketSourcePrevious);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task BucketSourceMissingOrWrongOwnedCheckRefusesAtomicDowngrade(bool wrong)
+    {
+        await RunOwnedAsync(async owned =>
+        {
+            await SeedAsync(owned.Context);
+            await ExecuteAsync(owned.Context, "ALTER TABLE public.\"OrderFile\" DROP CONSTRAINT \"CK_OrderFile_Bucket_SourceLength\"");
+            if (wrong) await ExecuteAsync(owned.Context, "ALTER TABLE public.\"OrderFile\" ADD CONSTRAINT \"CK_OrderFile_Bucket_SourceLength\" CHECK (true)");
+            var before = await SnapshotAsync(owned.Context);
+            var session = await FailureSessionAsync(owned.Context);
+            var failure = await Assert.ThrowsAsync<PostgresException>(() => MigrateAsync(owned.Context, BucketSourcePrevious));
+            Assert.Equal("P0001", failure.SqlState);
+            Assert.Equal(before, await SnapshotAsync(owned.Context));
+            await AssertFailureSessionRestoredAsync(owned.Context, session);
+            await AssertBucketSourceTempAbsentAsync(owned.Context);
+        }, BucketSourceTarget);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task BucketSourceInvalidRetainedRowsRefuseAtomicDowngrade(bool supplementary)
+    {
+        await RunOwnedAsync(async owned =>
+        {
+            await SeedAsync(owned.Context);
+            await ExecuteAsync(owned.Context, "ALTER TABLE public.\"OrderFile\" DROP CONSTRAINT \"CK_OrderFile_Bucket_SourceLength\"");
+            var invalid = supplementary ? string.Concat(Enumerable.Repeat("\U0001F600", 26)) : new string('\u0e01', 51);
+            await SetBucketSourceAsync(owned.Context, invalid);
+            await ExecuteAsync(owned.Context, "ALTER TABLE public.\"OrderFile\" ADD CONSTRAINT \"CK_OrderFile_Bucket_SourceLength\" CHECK (" + LengthSql("Bucket", 50) + ") NOT VALID");
+            Assert.Equal(invalid, await ScalarAsync<string>(owned.Context, "SELECT \"Bucket\" FROM public.\"OrderFile\" WHERE \"ID\"=1"));
+            var before = await SnapshotAsync(owned.Context);
+            var session = await FailureSessionAsync(owned.Context);
+            var failure = await Assert.ThrowsAsync<PostgresException>(() => MigrateAsync(owned.Context, BucketSourcePrevious));
+            Assert.Equal("P0001", failure.SqlState);
+            Assert.Equal(before, await SnapshotAsync(owned.Context));
+            await AssertFailureSessionRestoredAsync(owned.Context, session);
+            await AssertBucketSourceTempAbsentAsync(owned.Context);
+        }, BucketSourceTarget);
+    }
+
+    private static Task SetBucketSourceAsync(OrderDbContext context, string value) => ExecuteAsync(context,
+        "UPDATE public.\"OrderFile\" SET \"Bucket\"=@value WHERE \"ID\"=1",
+        new NpgsqlParameter("value", NpgsqlDbType.Text) { Value = value, Size = -1 });
+
+    private static async Task AssertBucketSourceTempAbsentAsync(OrderDbContext context) =>
+        Assert.True(await ScalarAsync<bool>(context, "SELECT to_regclass('pg_temp.\"__OrderFileBucketSourceGuard\"') IS NULL"));
+
+    private const string OrderTextSourcePrevious = "20261018110000_EnforceOrderFileBucketSourceLength";
+    private const string OrderTextSourceTarget = "20261018120000_EnforceNullableOrderTextSourceLengths";
+
+    [Fact]
+    public async Task OrderTextSourceUpDownUpPreservesNullableDefaultsModelAndWholeGraph()
+    {
+        await RunOwnedAsync(async owned =>
+        {
+            await SeedAsync(owned.Context);
+            await ExecuteAsync(owned.Context, """
+                INSERT INTO public."Order" ("ID","ProcessID","Name","Description","Quantity","Manufactured","AllowSocialMedia","AllowCancellation","AllowPayment")
+                VALUES (2,1,NULL,NULL,1,0,false,true,false),(3,1,'','',1,0,false,true,false),
+                       (4,1,@name,@description,1,0,false,true,false),(5,1,@paddedName,@paddedDescription,1,0,false,true,false);
+                """, new NpgsqlParameter("name", NpgsqlDbType.Text) { Value = string.Concat(Enumerable.Repeat("\U0001F600", 50)), Size = -1 },
+                new NpgsqlParameter("description", NpgsqlDbType.Text) { Value = string.Concat(Enumerable.Repeat("\U0001F600", 125)), Size = -1 },
+                new NpgsqlParameter("paddedName", NpgsqlDbType.Text) { Value = string.Concat(Enumerable.Repeat("\U0001F600", 49)) + "  ", Size = -1 },
+                new NpgsqlParameter("paddedDescription", NpgsqlDbType.Text) { Value = string.Concat(Enumerable.Repeat("\U0001F600", 124)) + "  ", Size = -1 });
+            var before = await SnapshotAsync(owned.Context);
+            var session = await FailureSessionAsync(owned.Context);
+            await MigrateAsync(owned.Context, OrderTextSourceTarget);
+            Assert.Equal(before.Rows, (await SnapshotAsync(owned.Context)).Rows);
+            Assert.False(owned.Context.Database.HasPendingModelChanges());
+            var snapshot = owned.Context.GetService<IMigrationsAssembly>().ModelSnapshot;
+            Assert.NotNull(snapshot);
+            foreach (var model in new[] { owned.Context.GetService<IDesignTimeModel>().Model, snapshot.Model })
+            {
+                var entity = model.FindEntityType(typeof(Legacy.Maliev.OrderService.Domain.Order).FullName!);
+                Assert.NotNull(entity);
+                foreach (var field in new[] { "Name", "Description" })
+                {
+                    var property = entity.FindProperty(field);
+                    Assert.NotNull(property);
+                    Assert.True(property.IsNullable);
+                    Assert.Equal(OrderTextSourceMaximum(field), property.GetMaxLength());
+                    Assert.Equal("text", property.GetColumnType());
+                    Assert.Equal(LengthSql(field, OrderTextSourceMaximum(field)),
+                        Assert.Single(entity.GetCheckConstraints(), value => value.Name == OrderTextSourceCheck(field)).Sql.Trim());
+                    if (field == "Name")
+                    {
+                        Assert.Equal("unnamed", property.GetDefaultValue());
+                        Assert.Equal(ValueGenerated.OnAdd, property.ValueGenerated);
+                    }
+                    else
+                    {
+                        Assert.Null(property.FindAnnotation(RelationalAnnotationNames.DefaultValue));
+                        Assert.Null(property.GetDefaultValueSql());
+                    }
+                }
+            }
+            var upgraded = await SnapshotAsync(owned.Context);
+            await MigrateAsync(owned.Context, OrderTextSourcePrevious);
+            Assert.Equal(before, await SnapshotAsync(owned.Context));
+            await MigrateAsync(owned.Context, OrderTextSourceTarget);
+            Assert.Equal(upgraded, await SnapshotAsync(owned.Context));
+            await AssertFailureSessionRestoredAsync(owned.Context, session);
+            await AssertOrderTextSourceTempAbsentAsync(owned.Context);
+        }, OrderTextSourcePrevious);
+    }
+
+    [Theory]
+    [InlineData("Name")]
+    [InlineData("Description")]
+    public async Task OrderTextSourceRetainedSupplementaryOverflowRefusesAtomicUpgrade(string field)
+    {
+        await RunOwnedAsync(async owned =>
+        {
+            await SeedAsync(owned.Context);
+            var invalid = string.Concat(Enumerable.Repeat("\U0001F600", OrderTextSourceMaximum(field) / 2 + 1));
+            Assert.True(invalid.Length > OrderTextSourceMaximum(field));
+            Assert.True(invalid.EnumerateRunes().Count() <= OrderTextSourceMaximum(field));
+            await SetOrderTextSourceAsync(owned.Context, field, invalid);
+            var before = await SnapshotAsync(owned.Context);
+            var session = await FailureSessionAsync(owned.Context);
+            var failure = await Assert.ThrowsAsync<PostgresException>(() => MigrateAsync(owned.Context, OrderTextSourceTarget));
+            Assert.Equal("P0001", failure.SqlState);
+            Assert.Equal(before, await SnapshotAsync(owned.Context));
+            await AssertFailureSessionRestoredAsync(owned.Context, session);
+            await AssertOrderTextSourceTempAbsentAsync(owned.Context);
+        }, OrderTextSourcePrevious);
+    }
+
+    [Theory]
+    [InlineData(false, "Name", false)]
+    [InlineData(false, "Name", true)]
+    [InlineData(false, "Description", false)]
+    [InlineData(true, "Name", false)]
+    [InlineData(true, "Name", true)]
+    [InlineData(true, "Description", false)]
+    public async Task OrderTextSourceDefaultDriftRefusesAtomicMigration(bool downgrade, string field, bool missing)
+    {
+        await RunOwnedAsync(async owned =>
+        {
+            await SeedAsync(owned.Context);
+            _ = OrderTextSourceMaximum(field);
+            await ExecuteAsync(owned.Context, missing
+                ? "ALTER TABLE public.\"Order\" ALTER COLUMN \"Name\" DROP DEFAULT"
+                : "ALTER TABLE public.\"Order\" ALTER COLUMN " + Quote(field) + " SET DEFAULT 'changed'");
+            var before = await SnapshotAsync(owned.Context);
+            var session = await FailureSessionAsync(owned.Context);
+            var failure = await Assert.ThrowsAsync<PostgresException>(() =>
+                MigrateAsync(owned.Context, downgrade ? OrderTextSourcePrevious : OrderTextSourceTarget));
+            Assert.Equal("P0001", failure.SqlState);
+            Assert.Equal(before, await SnapshotAsync(owned.Context));
+            await AssertFailureSessionRestoredAsync(owned.Context, session);
+            await AssertOrderTextSourceTempAbsentAsync(owned.Context);
+        }, downgrade ? OrderTextSourceTarget : OrderTextSourcePrevious);
+    }
+
+    [Theory]
+    [InlineData("Name", false)]
+    [InlineData("Name", true)]
+    [InlineData("Description", false)]
+    [InlineData("Description", true)]
+    public async Task OrderTextSourceMissingOrWrongOwnedCheckRefusesAtomicDowngrade(string field, bool wrong)
+    {
+        await RunOwnedAsync(async owned =>
+        {
+            await SeedAsync(owned.Context);
+            var check = Quote(OrderTextSourceCheck(field));
+            await ExecuteAsync(owned.Context, "ALTER TABLE public.\"Order\" DROP CONSTRAINT " + check);
+            if (wrong) await ExecuteAsync(owned.Context, "ALTER TABLE public.\"Order\" ADD CONSTRAINT " + check + " CHECK (true)");
+            var before = await SnapshotAsync(owned.Context);
+            var session = await FailureSessionAsync(owned.Context);
+            var failure = await Assert.ThrowsAsync<PostgresException>(() => MigrateAsync(owned.Context, OrderTextSourcePrevious));
+            Assert.Equal("P0001", failure.SqlState);
+            Assert.Equal(before, await SnapshotAsync(owned.Context));
+            await AssertFailureSessionRestoredAsync(owned.Context, session);
+            await AssertOrderTextSourceTempAbsentAsync(owned.Context);
+        }, OrderTextSourceTarget);
+    }
+
+    [Theory]
+    [InlineData("Name", false)]
+    [InlineData("Name", true)]
+    [InlineData("Description", false)]
+    [InlineData("Description", true)]
+    public async Task OrderTextSourceInvalidRetainedRowsRefuseAtomicDowngrade(string field, bool supplementary)
+    {
+        await RunOwnedAsync(async owned =>
+        {
+            await SeedAsync(owned.Context);
+            var check = Quote(OrderTextSourceCheck(field));
+            await ExecuteAsync(owned.Context, "ALTER TABLE public.\"Order\" DROP CONSTRAINT " + check);
+            var maximum = OrderTextSourceMaximum(field);
+            var invalid = supplementary ? string.Concat(Enumerable.Repeat("\U0001F600", maximum / 2 + 1)) : new string('\u0e01', maximum + 1);
+            await SetOrderTextSourceAsync(owned.Context, field, invalid);
+            await ExecuteAsync(owned.Context, "ALTER TABLE public.\"Order\" ADD CONSTRAINT " + check + " CHECK (" + LengthSql(field, maximum) + ") NOT VALID");
+            Assert.Equal(invalid, await ScalarAsync<string>(owned.Context, "SELECT " + Quote(field) + " FROM public.\"Order\" WHERE \"ID\"=1"));
+            var before = await SnapshotAsync(owned.Context);
+            var session = await FailureSessionAsync(owned.Context);
+            var failure = await Assert.ThrowsAsync<PostgresException>(() => MigrateAsync(owned.Context, OrderTextSourcePrevious));
+            Assert.Equal("P0001", failure.SqlState);
+            Assert.Equal(before, await SnapshotAsync(owned.Context));
+            await AssertFailureSessionRestoredAsync(owned.Context, session);
+            await AssertOrderTextSourceTempAbsentAsync(owned.Context);
+        }, OrderTextSourceTarget);
+    }
+
+    private static int OrderTextSourceMaximum(string field) => field switch
+    {
+        "Name" => 100,
+        "Description" => 250,
+        _ => throw new ArgumentOutOfRangeException(nameof(field))
+    };
+
+    private static string OrderTextSourceCheck(string field)
+    {
+        _ = OrderTextSourceMaximum(field);
+        return "CK_Order_" + field + "_SourceLength";
+    }
+
+    private static Task SetOrderTextSourceAsync(OrderDbContext context, string field, string value) =>
+        ExecuteAsync(context, field switch
+        {
+            "Name" => "UPDATE public.\"Order\" SET \"Name\"=@value WHERE \"ID\"=1",
+            "Description" => "UPDATE public.\"Order\" SET \"Description\"=@value WHERE \"ID\"=1",
+            _ => throw new ArgumentOutOfRangeException(nameof(field))
+        }, new NpgsqlParameter("value", NpgsqlDbType.Text) { Value = value, Size = -1 });
+
+    private static async Task AssertOrderTextSourceTempAbsentAsync(OrderDbContext context) =>
+        Assert.True(await ScalarAsync<bool>(context, "SELECT to_regclass('pg_temp.\"__OrderTextSourceGuard\"') IS NULL"));
 
     private sealed record FailureSession(string LockTimeout, string StatementTimeout);
     private static async Task<FailureSession> FailureSessionAsync(OrderDbContext context)

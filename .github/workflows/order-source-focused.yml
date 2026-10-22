@@ -22,7 +22,7 @@ jobs:
       VSTestCollect: XPlat Code Coverage
       VSTestLogger: trx
       VSTestResultsDirectory: ${{ github.workspace }}/focused-results
-      VSTestTestCaseFilter: FullyQualifiedName~OrderCalendarTurnaroundHttpTests|FullyQualifiedName~OrderFileMetadataLifecycleHttpTests|FullyQualifiedName~OrderOpenApiHttpContractTests|FullyQualifiedName~OrderCatalogLifecycleHttpTests
+      VSTestTestCaseFilter: FullyQualifiedName~OrderCalendarTurnaroundHttpTests|FullyQualifiedName~OrderFileMetadataLifecycleHttpTests|FullyQualifiedName~OrderOpenApiHttpContractTests|FullyQualifiedName~OrderCatalogLifecycleHttpTests|FullyQualifiedName~OrderPrimitiveTextHttpTests|FullyQualifiedName~OrderOriginalInputHttpTests|FullyQualifiedName~OrderSourceBodyBoundaryTests
     steps:
       - name: Check out OrderService
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -49,7 +49,7 @@ jobs:
           use-local-maliev-dependencies: 'true'
       - name: Preserve validation evidence
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: order-source-focused-${{ github.sha }}
           path: focused-results

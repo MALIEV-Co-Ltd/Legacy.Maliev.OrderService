@@ -8,6 +8,9 @@ import xml.etree.ElementTree as ET
 
 repository = Path(__file__).resolve().parent.parent
 expected = {
+    "ListOmittedSize_ReturnsAllMatchesAndPascalPager": 6,
+    "ListExplicitSizeAndAdmissionGuards_RemainUnchanged": 3,
+    "ListOmittedSize_DeletionConflictRemainsReadOnly": 3,
     "ListSearch_SourceContainsTreatsPercentAndUnderscoreAsLiteral": 6,
     "ListSearch_SourceRetainsSpacesAroundNonemptyLiteralText": 3,
     "ListPage_SourceReturnsNotFoundBeyondLastSelectedRow": 3,
@@ -46,9 +49,9 @@ for result in results:
 if dict(actual) != expected:
     raise SystemExit(f"Query cardinality mismatch: {dict(actual)}")
 counters = trx.find(".//t:Counters", ns)
-if counters is None or any(int(counters.get(key, "-1")) != 27
+if counters is None or any(int(counters.get(key, "-1")) != 39
                            for key in ("total", "executed", "passed")):
-    raise SystemExit("Expected exactly 27 executed/passed cases")
+    raise SystemExit("Expected exactly 39 executed/passed cases")
 if any(int(counters.get(key, "0")) != 0 for key in
        ("failed", "error", "timeout", "aborted", "inconclusive", "notExecuted")):
     raise SystemExit("Failed or skipped query case")
@@ -63,7 +66,7 @@ for assembly in ("Api", "Application", "Data", "Domain"):
     if not selected or not any(p.findall(".//line") for p in selected):
         raise SystemExit(f"Missing executable coverage inventory: {name}")
 receipt = {
-    "passed": 27, "failed": 0, "skipped": 0, "methods": dict(actual),
+    "passed": 39, "failed": 0, "skipped": 0, "methods": dict(actual),
     "trx_sha256": hashlib.sha256(reports[0].read_bytes()).hexdigest(),
     "raw_sha256": next(iter(digests)), "raw_copies": len(raw),
     "note": "Focused coverage retained; the full-suite workflow gates all four assemblies at 80%.",

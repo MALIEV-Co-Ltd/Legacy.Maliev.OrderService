@@ -4,6 +4,7 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using Legacy.Maliev.OrderService.Api.Authorization;
+using Legacy.Maliev.OrderService.Application.Interfaces;
 using Legacy.Maliev.OrderService.Application.Models;
 using Legacy.Maliev.OrderService.Data;
 using Legacy.Maliev.OrderService.Domain;
@@ -12,6 +13,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Time.Testing;
+using Npgsql;
+using NpgsqlTypes;
 
 namespace Legacy.Maliev.OrderService.Tests.Controllers;
 
@@ -143,6 +146,144 @@ public sealed class OrderCategoryScalarStringHttpTests(OrderDeletionReadinessFix
         {
             Assert.Equal(JsonValueKind.String, wire.RootElement.GetProperty(field).ValueKind);
             Assert.Equal("12.3400E+03", wire.RootElement.GetProperty(field).GetString());
+        }
+    }
+
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task NullableCategory_Utf16BoundaryPersistsAndOverflowDoesNotWrite(bool update, bool supplementary)
+    {
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 10, 18, 0, 0, 0, TimeSpan.Zero));
+        await using var app = await AppAsync(clock);
+        await SeedAsync(app);
+        using var writer = Client(app, OrderPermissions.CatalogWrite);
+        using var reader = Client(app, OrderPermissions.CatalogRead);
+        var original = update ? await CreateControlAsync(writer) : null;
+        var exact = supplementary ? string.Concat(Enumerable.Repeat("\U0001F600", 25)) : new string('\u0e01', 50);
+        Assert.Equal(50, exact.Length);
+        foreach (var value in new string?[] { null, "", "  \u0e01 padded ", exact })
+        {
+            var before = await SnapshotAsync(app, original?.Id);
+            clock.Advance(TimeSpan.FromSeconds(1));
+            using var response = await SendAsync(writer, update, original?.Id ?? 0, Payload(JsonSerializer.Serialize(value)));
+            Assert.Equal(update ? HttpStatusCode.NoContent : HttpStatusCode.Created, response.StatusCode);
+            var id = original?.Id ?? (await response.Content.ReadFromJsonAsync<CategoryResponse>())!.Id;
+            if (!update) Assert.NotNull(response.Headers.Location);
+            var current = (await reader.GetFromJsonAsync<CategoryResponse>($"/orders/categories/{id}"))!;
+            Assert.Equal(value, current.Name);
+            if (original is not null) Assert.Equal(original.CreatedDate, current.CreatedDate);
+            Assert.Equal(clock.GetUtcNow().UtcDateTime, current.ModifiedDate);
+            await using (var scope = app.Services.CreateAsyncScope())
+            {
+                var database = scope.ServiceProvider.GetRequiredService<OrderDbContext>();
+                Assert.Equal(value, (await database.Categories.AsNoTracking().SingleAsync(row => row.Id == id)).Name);
+            }
+            Assert.Equal(before, await SnapshotAsync(app, id));
+        }
+        var overflow = supplementary ? string.Concat(Enumerable.Repeat("\U0001F600", 26)) : new string('\u0e01', 51);
+        Assert.True(overflow.Length > 50);
+        var unchanged = await SnapshotAsync(app);
+        using var invalid = await SendAsync(writer, update, original?.Id ?? 0, Payload(JsonSerializer.Serialize(overflow)));
+        // Deliberate existing Process/Status safe-boundary adaptation, not a
+        // claim that the original SQL exception produced an HTTP 400 response.
+        Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
+        Assert.Equal(unchanged, await SnapshotAsync(app));
+    }
+
+    [Fact]
+    public async Task CategoryLength_AuthorityAndMissingUpdatePrecedeValidation()
+    {
+        await using var app = await AppAsync(new FakeTimeProvider());
+        await SeedAsync(app);
+        using var writer = Client(app, OrderPermissions.CatalogWrite);
+        var original = await CreateControlAsync(writer);
+        var before = await SnapshotAsync(app);
+        var payload = Payload(JsonSerializer.Serialize(string.Concat(Enumerable.Repeat("\U0001F600", 26))));
+        using var anonymous = app.CreateClient();
+        using var denied = Client(app, OrderPermissions.CatalogRead);
+        foreach (var update in new[] { false, true })
+        {
+            using var unauthorized = await SendAsync(anonymous, update, original.Id, payload);
+            Assert.Equal(HttpStatusCode.Unauthorized, unauthorized.StatusCode);
+            using var forbidden = await SendAsync(denied, update, original.Id, payload);
+            Assert.Equal(HttpStatusCode.Forbidden, forbidden.StatusCode);
+        }
+        using var missing = await SendAsync(writer, true, int.MaxValue, payload);
+        Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
+        Assert.Equal(before, await SnapshotAsync(app));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task DirectCategory_OverflowIsRefusedBeforeTrackedMutation(bool update)
+    {
+        await using var app = await AppAsync(new FakeTimeProvider());
+        await SeedAsync(app);
+        using var writer = Client(app, OrderPermissions.CatalogWrite);
+        var original = await CreateControlAsync(writer);
+        var before = await SnapshotAsync(app);
+        await using var scope = app.Services.CreateAsyncScope();
+        var service = scope.ServiceProvider.GetRequiredService<IOrderService>();
+        var request = new UpsertCategoryRequest(string.Concat(Enumerable.Repeat("\U0001F600", 26)));
+        if (update) await Assert.ThrowsAsync<ArgumentException>(() => service.UpdateCategoryAsync(original.Id, request, CancellationToken.None));
+        else await Assert.ThrowsAsync<ArgumentException>(() => service.CreateCategoryAsync(request, CancellationToken.None));
+        Assert.DoesNotContain(scope.ServiceProvider.GetRequiredService<OrderDbContext>().ChangeTracker.Entries(),
+            entry => entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted);
+        Assert.Equal(before, await SnapshotAsync(app));
+    }
+
+    [Fact]
+    public async Task PhysicalCategory_NullAndFiftyUtf16UnitsPersistButTwentySixSupplementaryCharactersFail()
+    {
+        await using var app = await AppAsync(new FakeTimeProvider());
+        await SeedAsync(app);
+        using var writer = Client(app, OrderPermissions.CatalogWrite);
+        var original = await CreateControlAsync(writer);
+        await using var scope = app.Services.CreateAsyncScope();
+        var database = scope.ServiceProvider.GetRequiredService<OrderDbContext>();
+        foreach (var update in new[] { false, true })
+        {
+            foreach (var value in new string?[] { null, "", new string('\u0e01', 50), string.Concat(Enumerable.Repeat("\U0001F600", 25)) })
+            {
+                var id = await WriteCategoryLengthAsync(database, update, original.Id, value);
+                Assert.Equal(value, (await database.Categories.AsNoTracking().SingleAsync(row => row.Id == id)).Name);
+            }
+            var before = await SnapshotAsync(app);
+            var overflow = string.Concat(Enumerable.Repeat("\U0001F600", 26));
+            Assert.Equal(52, overflow.Length);
+            Assert.Equal(26, overflow.EnumerateRunes().Count());
+            var failure = await Assert.ThrowsAsync<PostgresException>(() => WriteCategoryLengthAsync(database, update, original.Id, overflow));
+            Assert.Equal("23514", failure.SqlState);
+            Assert.Equal("CK_Category_Name_SourceLength", failure.ConstraintName);
+            Assert.Equal(before, await SnapshotAsync(app));
+            Assert.Null(database.Database.CurrentTransaction);
+        }
+    }
+
+    private static async Task<int> WriteCategoryLengthAsync(OrderDbContext database, bool update, int id, string? value)
+    {
+        using var lifetime = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        await database.Database.OpenConnectionAsync(lifetime.Token);
+        try
+        {
+            await using var command = database.Database.GetDbConnection().CreateCommand();
+            command.CommandTimeout = 30;
+            command.CommandText = update
+                ? """UPDATE public."Category" SET "Name"=@value WHERE "ID"=@id RETURNING "ID";"""
+                : """INSERT INTO public."Category" ("Name") VALUES (@value) RETURNING "ID";""";
+            command.Parameters.Add(new NpgsqlParameter("value", NpgsqlDbType.Text) { Value = (object?)value ?? DBNull.Value, Size = -1 });
+            if (update) command.Parameters.Add(new NpgsqlParameter("id", NpgsqlDbType.Integer) { Value = id });
+            var result = await command.ExecuteScalarAsync(lifetime.Token);
+            return Assert.IsType<int>(result);
+        }
+        finally
+        {
+            await database.Database.CloseConnectionAsync();
         }
     }
 

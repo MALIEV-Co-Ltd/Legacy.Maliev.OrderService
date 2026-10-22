@@ -4,6 +4,7 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using Legacy.Maliev.OrderService.Api.Authorization;
+using Legacy.Maliev.OrderService.Application.Interfaces;
 using Legacy.Maliev.OrderService.Application.Models;
 using Legacy.Maliev.OrderService.Data;
 using Legacy.Maliev.OrderService.Domain;
@@ -12,6 +13,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Time.Testing;
+using Npgsql;
+using NpgsqlTypes;
 
 namespace Legacy.Maliev.OrderService.Tests.Controllers;
 
@@ -58,7 +61,7 @@ public sealed class OrderFileFormatScalarStringHttpTests(OrderDeletionReadinessF
         using var fresh = await reader.GetAsync($"/orders/fileformats/{id}");
         Assert.Equal(HttpStatusCode.OK, fresh.StatusCode);
         using var wire = JsonDocument.Parse(await fresh.Content.ReadAsStringAsync());
-        foreach (var field in new[] { "Name", "Extension" })
+        foreach (var field in new[] { "name", "extension" })
         {
             if (expected is null) Assert.False(wire.RootElement.TryGetProperty(field, out _));
             else
@@ -148,6 +151,167 @@ public sealed class OrderFileFormatScalarStringHttpTests(OrderDeletionReadinessF
         {
             Assert.Equal(JsonValueKind.String, wire.RootElement.GetProperty(field).ValueKind);
             Assert.Equal("12.3400E+03", wire.RootElement.GetProperty(field).GetString());
+        }
+    }
+
+
+    [Theory]
+    [InlineData("Name", false, false)]
+    [InlineData("Name", false, true)]
+    [InlineData("Name", true, false)]
+    [InlineData("Name", true, true)]
+    [InlineData("Extension", false, false)]
+    [InlineData("Extension", false, true)]
+    [InlineData("Extension", true, false)]
+    [InlineData("Extension", true, true)]
+    public async Task NullableFileFormat_Utf16BoundaryPersistsAndOverflowDoesNotWrite(string field, bool update, bool supplementary)
+    {
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 10, 18, 0, 0, 0, TimeSpan.Zero));
+        await using var app = await AppAsync(clock);
+        await SeedAsync(app);
+        using var writer = Client(app, OrderPermissions.CatalogWrite);
+        using var reader = Client(app, OrderPermissions.CatalogRead);
+        var original = update ? await CreateControlAsync(writer) : null;
+        var exact = supplementary ? string.Concat(Enumerable.Repeat("\U0001F600", 25)) : new string('\u0e01', 50);
+        Assert.Equal(50, exact.Length);
+        foreach (var value in new string?[] { null, "", "  \u0e01 padded ", exact })
+        {
+            var before = await SnapshotAsync(app, original?.Id);
+            clock.Advance(TimeSpan.FromSeconds(1));
+            using var response = await SendAsync(writer, update, original?.Id ?? 0, FileFormatLengthPayload(field, value));
+            Assert.Equal(update ? HttpStatusCode.NoContent : HttpStatusCode.Created, response.StatusCode);
+            var id = original?.Id ?? (await response.Content.ReadFromJsonAsync<FileFormatResponse>())!.Id;
+            if (!update) Assert.NotNull(response.Headers.Location);
+            var current = (await reader.GetFromJsonAsync<FileFormatResponse>($"/orders/fileformats/{id}"))!;
+            Assert.Equal(value, field == "Name" ? current.Name : current.Extension);
+            Assert.Equal(field == "Name" ? ".old" : "Control", field == "Name" ? current.Extension : current.Name);
+            if (original is not null) Assert.Equal(original.CreatedDate, current.CreatedDate);
+            Assert.Equal(clock.GetUtcNow().UtcDateTime, current.ModifiedDate);
+            await using (var scope = app.Services.CreateAsyncScope())
+            {
+                var database = scope.ServiceProvider.GetRequiredService<OrderDbContext>();
+                var stored = await database.FileFormats.AsNoTracking().SingleAsync(row => row.Id == id);
+                Assert.Equal(value, field == "Name" ? stored.Name : stored.Extension);
+            }
+            Assert.Equal(before, await SnapshotAsync(app, id));
+        }
+        var overflow = supplementary ? string.Concat(Enumerable.Repeat("\U0001F600", 26)) : new string('\u0e01', 51);
+        Assert.True(overflow.Length > 50);
+        var unchanged = await SnapshotAsync(app);
+        using var invalid = await SendAsync(writer, update, original?.Id ?? 0, FileFormatLengthPayload(field, overflow));
+        // Existing Process/Status HTTP 400 adaptation; original SQL behavior is
+        // represented by the independent physical constraint tests below.
+        Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
+        Assert.Equal(unchanged, await SnapshotAsync(app));
+    }
+
+    [Theory]
+    [InlineData("Name")]
+    [InlineData("Extension")]
+    public async Task FileFormatLength_AuthorityAndMissingUpdatePrecedeValidation(string field)
+    {
+        await using var app = await AppAsync(new FakeTimeProvider());
+        await SeedAsync(app);
+        using var writer = Client(app, OrderPermissions.CatalogWrite);
+        var original = await CreateControlAsync(writer);
+        var before = await SnapshotAsync(app);
+        var payload = FileFormatLengthPayload(field, string.Concat(Enumerable.Repeat("\U0001F600", 26)));
+        using var anonymous = app.CreateClient();
+        using var denied = Client(app, OrderPermissions.CatalogRead);
+        foreach (var update in new[] { false, true })
+        {
+            using var unauthorized = await SendAsync(anonymous, update, original.Id, payload);
+            Assert.Equal(HttpStatusCode.Unauthorized, unauthorized.StatusCode);
+            using var forbidden = await SendAsync(denied, update, original.Id, payload);
+            Assert.Equal(HttpStatusCode.Forbidden, forbidden.StatusCode);
+        }
+        using var missing = await SendAsync(writer, true, int.MaxValue, payload);
+        Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
+        Assert.Equal(before, await SnapshotAsync(app));
+    }
+
+    [Theory]
+    [InlineData("Name", false)]
+    [InlineData("Name", true)]
+    [InlineData("Extension", false)]
+    [InlineData("Extension", true)]
+    public async Task DirectFileFormat_OverflowIsRefusedBeforeTrackedMutation(string field, bool update)
+    {
+        await using var app = await AppAsync(new FakeTimeProvider());
+        await SeedAsync(app);
+        using var writer = Client(app, OrderPermissions.CatalogWrite);
+        var original = await CreateControlAsync(writer);
+        var before = await SnapshotAsync(app);
+        await using var scope = app.Services.CreateAsyncScope();
+        var service = scope.ServiceProvider.GetRequiredService<IOrderService>();
+        var overflow = string.Concat(Enumerable.Repeat("\U0001F600", 26));
+        var request = new UpsertFileFormatRequest(field == "Name" ? overflow : "Control", field == "Extension" ? overflow : ".old");
+        if (update) await Assert.ThrowsAsync<ArgumentException>(() => service.UpdateFileFormatAsync(original.Id, request, CancellationToken.None));
+        else await Assert.ThrowsAsync<ArgumentException>(() => service.CreateFileFormatAsync(request, CancellationToken.None));
+        Assert.DoesNotContain(scope.ServiceProvider.GetRequiredService<OrderDbContext>().ChangeTracker.Entries(),
+            entry => entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted);
+        Assert.Equal(before, await SnapshotAsync(app));
+    }
+
+    [Theory]
+    [InlineData("Name")]
+    [InlineData("Extension")]
+    public async Task PhysicalFileFormat_NullAndFiftyUtf16UnitsPersistButTwentySixSupplementaryCharactersFail(string field)
+    {
+        await using var app = await AppAsync(new FakeTimeProvider());
+        await SeedAsync(app);
+        using var writer = Client(app, OrderPermissions.CatalogWrite);
+        var original = await CreateControlAsync(writer);
+        await using var scope = app.Services.CreateAsyncScope();
+        var database = scope.ServiceProvider.GetRequiredService<OrderDbContext>();
+        foreach (var update in new[] { false, true })
+        {
+            foreach (var value in new string?[] { null, "", new string('\u0e01', 50), string.Concat(Enumerable.Repeat("\U0001F600", 25)) })
+            {
+                var id = await WriteFileFormatLengthAsync(database, field, update, original.Id, value);
+                var stored = await database.FileFormats.AsNoTracking().SingleAsync(row => row.Id == id);
+                Assert.Equal(value, field == "Name" ? stored.Name : stored.Extension);
+                Assert.Equal(field == "Name" ? ".old" : "Control", field == "Name" ? stored.Extension : stored.Name);
+            }
+            var before = await SnapshotAsync(app);
+            var overflow = string.Concat(Enumerable.Repeat("\U0001F600", 26));
+            Assert.Equal(52, overflow.Length);
+            Assert.Equal(26, overflow.EnumerateRunes().Count());
+            var failure = await Assert.ThrowsAsync<PostgresException>(() => WriteFileFormatLengthAsync(database, field, update, original.Id, overflow));
+            Assert.Equal("23514", failure.SqlState);
+            Assert.Equal("CK_FileFormat_" + field + "_SourceLength", failure.ConstraintName);
+            Assert.Equal(before, await SnapshotAsync(app));
+            Assert.Null(database.Database.CurrentTransaction);
+        }
+    }
+
+    private static string FileFormatLengthPayload(string field, string? value) => JsonSerializer.Serialize(
+        new Dictionary<string, string?> { ["Name"] = field == "Name" ? value : "Control", ["Extension"] = field == "Extension" ? value : ".old" });
+
+    private static async Task<int> WriteFileFormatLengthAsync(OrderDbContext database, string field, bool update, int id, string? value)
+    {
+        using var lifetime = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        await database.Database.OpenConnectionAsync(lifetime.Token);
+        try
+        {
+            await using var command = database.Database.GetDbConnection().CreateCommand();
+            command.CommandTimeout = 30;
+            command.CommandText = (field, update) switch
+            {
+                ("Name", false) => """INSERT INTO public."FileFormat" ("Name","Extension") VALUES (@value,'.old') RETURNING "ID";""",
+                ("Name", true) => """UPDATE public."FileFormat" SET "Name"=@value WHERE "ID"=@id RETURNING "ID";""",
+                ("Extension", false) => """INSERT INTO public."FileFormat" ("Name","Extension") VALUES ('Control',@value) RETURNING "ID";""",
+                ("Extension", true) => """UPDATE public."FileFormat" SET "Extension"=@value WHERE "ID"=@id RETURNING "ID";""",
+                _ => throw new ArgumentOutOfRangeException(nameof(field))
+            };
+            command.Parameters.Add(new NpgsqlParameter("value", NpgsqlDbType.Text) { Value = (object?)value ?? DBNull.Value, Size = -1 });
+            if (update) command.Parameters.Add(new NpgsqlParameter("id", NpgsqlDbType.Integer) { Value = id });
+            var result = await command.ExecuteScalarAsync(lifetime.Token);
+            return Assert.IsType<int>(result);
+        }
+        finally
+        {
+            await database.Database.CloseConnectionAsync();
         }
     }
 

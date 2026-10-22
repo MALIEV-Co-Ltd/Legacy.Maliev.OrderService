@@ -188,4 +188,101 @@ public sealed class OrderCatalogLifecycleHttpTests(OrderDeletionReadinessFixture
         Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
         Assert.Equal(next.Id, Assert.Single(await database.Statuses.AsNoTracking().ToArrayAsync()).Id);
     }
+
+    [Fact]
+    public async Task InProgressShortcut_UsesSpacedSourceNameAndReplaysWithoutAnotherTransition()
+    {
+        await using var app = await AppAsync();
+        var seed = await SeedInProgressAsync(app, sourcePresent: true, sourceAllowed: true);
+        using var writer = Client(app, OrderPermissions.StatusWrite);
+        writer.DefaultRequestHeaders.Add("Idempotency-Key", "source-in-progress");
+        var route = $"/orderstatuses/histories/{seed.OrderId}/InProgress";
+        using var created = await writer.PostAsync(route, null);
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        await using var scope = app.Services.CreateAsyncScope();
+        var database = scope.ServiceProvider.GetRequiredService<OrderStatusDbContext>();
+        var history = await database.History.AsNoTracking().OrderBy(row => row.Id).ToArrayAsync();
+        Assert.Equal(2, history.Length);
+        Assert.Equal(seed.InitialId, history[0].OrderStatusId);
+        Assert.Equal(seed.SourceId, history[1].OrderStatusId);
+        Assert.DoesNotContain(history, row => row.OrderStatusId == seed.CompactId);
+
+        // Move the owned fixture back and remove its edges: only the stored replay may succeed.
+        database.History.Add(new OrderStatusHistory { OrderId = seed.OrderId, OrderStatusId = seed.InitialId });
+        database.Transitions.RemoveRange(await database.Transitions.ToArrayAsync());
+        await database.SaveChangesAsync();
+        var beforeReplay = await database.History.AsNoTracking().OrderBy(row => row.Id)
+            .Select(row => new { row.Id, row.OrderId, row.OrderStatusId, row.CreatedDate, row.ModifiedDate }).ToArrayAsync();
+        using var replay = await writer.PostAsync(route, null);
+        Assert.Equal(HttpStatusCode.Created, replay.StatusCode);
+        Assert.Equal(beforeReplay, await database.History.AsNoTracking().OrderBy(row => row.Id)
+            .Select(row => new { row.Id, row.OrderId, row.OrderStatusId, row.CreatedDate, row.ModifiedDate }).ToArrayAsync());
+        writer.DefaultRequestHeaders.Remove("Idempotency-Key");
+        writer.DefaultRequestHeaders.Add("Idempotency-Key", "source-in-progress-new");
+        using var refused = await writer.PostAsync(route, null);
+        Assert.Equal(HttpStatusCode.Conflict, refused.StatusCode);
+        Assert.Equal(beforeReplay, await database.History.AsNoTracking().OrderBy(row => row.Id)
+            .Select(row => new { row.Id, row.OrderId, row.OrderStatusId, row.CreatedDate, row.ModifiedDate }).ToArrayAsync());
+        Assert.Empty(await scope.ServiceProvider.GetRequiredService<OrderDbContext>().DeletionIntents.AsNoTracking().ToArrayAsync());
+    }
+
+    [Fact]
+    public async Task InProgressShortcut_MissingSpacedNameDoesNotSubstituteCompactName()
+    {
+        await using var app = await AppAsync();
+        var seed = await SeedInProgressAsync(app, sourcePresent: false, sourceAllowed: false);
+        using var writer = Client(app, OrderPermissions.StatusWrite);
+        await using var scope = app.Services.CreateAsyncScope();
+        var database = scope.ServiceProvider.GetRequiredService<OrderStatusDbContext>();
+        var before = await database.History.AsNoTracking().OrderBy(row => row.Id)
+            .Select(row => new { row.Id, row.OrderId, row.OrderStatusId, row.CreatedDate, row.ModifiedDate }).ToArrayAsync();
+        using var missing = await writer.PostAsync($"/orderstatuses/histories/{seed.OrderId}/InProgress", null);
+        Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
+        Assert.Equal(before, await database.History.AsNoTracking().OrderBy(row => row.Id)
+            .Select(row => new { row.Id, row.OrderId, row.OrderStatusId, row.CreatedDate, row.ModifiedDate }).ToArrayAsync());
+    }
+
+    [Fact]
+    public async Task InProgressShortcut_SpacedTargetStillRequiresConfiguredTransition()
+    {
+        await using var app = await AppAsync();
+        var seed = await SeedInProgressAsync(app, sourcePresent: true, sourceAllowed: false);
+        using var writer = Client(app, OrderPermissions.StatusWrite);
+        await using var scope = app.Services.CreateAsyncScope();
+        var database = scope.ServiceProvider.GetRequiredService<OrderStatusDbContext>();
+        var before = await database.History.AsNoTracking().OrderBy(row => row.Id)
+            .Select(row => new { row.Id, row.OrderId, row.OrderStatusId, row.CreatedDate, row.ModifiedDate }).ToArrayAsync();
+        using var refused = await writer.PostAsync($"/orderstatuses/histories/{seed.OrderId}/InProgress", null);
+        Assert.Equal(HttpStatusCode.Conflict, refused.StatusCode);
+        Assert.Equal(before, await database.History.AsNoTracking().OrderBy(row => row.Id)
+            .Select(row => new { row.Id, row.OrderId, row.OrderStatusId, row.CreatedDate, row.ModifiedDate }).ToArrayAsync());
+    }
+
+    private static async Task<(int OrderId, int InitialId, int SourceId, int CompactId)> SeedInProgressAsync(
+        WebApplicationFactory<Program> app, bool sourcePresent, bool sourceAllowed)
+    {
+        await using var scope = app.Services.CreateAsyncScope();
+        var orders = scope.ServiceProvider.GetRequiredService<OrderDbContext>();
+        var order = new Order
+        {
+            Name = "Owned source shortcut fixture",
+            Process = new Process { Name = "Owned fixture", Category = new Category { Name = "Owned fixture" } },
+            Quantity = 1
+        };
+        orders.Add(order);
+        await orders.SaveChangesAsync();
+        var statuses = scope.ServiceProvider.GetRequiredService<OrderStatusDbContext>();
+        var initial = new OrderStatus { Name = "New" };
+        var compact = new OrderStatus { Name = "InProgress" };
+        var source = new OrderStatus { Name = "In Progress" };
+        statuses.AddRange(initial, compact);
+        if (sourcePresent) statuses.Add(source);
+        await statuses.SaveChangesAsync();
+        statuses.History.Add(new OrderStatusHistory { OrderId = order.Id, OrderStatusId = initial.Id });
+        statuses.Transitions.Add(new OrderStatusTransition { OrderStatusId = initial.Id, PossibleStatusId = compact.Id });
+        if (sourcePresent && sourceAllowed)
+            statuses.Transitions.Add(new OrderStatusTransition { OrderStatusId = initial.Id, PossibleStatusId = source.Id });
+        await statuses.SaveChangesAsync();
+        return (order.Id, initial.Id, source.Id, compact.Id);
+    }
 }
