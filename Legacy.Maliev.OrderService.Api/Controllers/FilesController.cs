@@ -24,7 +24,7 @@ public sealed class FilesController(IOrderService s) : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [OrderMutationUnavailable]
     [OrderLifetimeConflict]
-    [HttpPost("/orders/{orderId:int}/files"), RequirePermission(OrderPermissions.FilesWrite, ResourcePathTemplate = "/orders/{orderId}")] public async Task<IActionResult> CreateOrderFileEntryAsync(int orderId, [FromQuery] string bucket, [FromQuery] string objectName, CancellationToken c) { if (string.IsNullOrWhiteSpace(bucket) || string.IsNullOrWhiteSpace(objectName)) return BadRequest(); var v = await s.CreateFileAsync(orderId, bucket, objectName, c); return v is null ? NotFound() : CreatedAtRoute("GetOrderFile", new { id = v.Id }, v); }
+    [HttpPost("/orders/{orderId:int}/files"), RequirePermission(OrderPermissions.FilesWrite, ResourcePathTemplate = "/orders/{orderId}")] public async Task<IActionResult> CreateOrderFileEntryAsync(int orderId, [FromQuery] string bucket, [FromQuery] string objectName, CancellationToken c) { if (string.IsNullOrEmpty(bucket)) return BadRequest("bucket is required"); if (string.IsNullOrEmpty(objectName)) return BadRequest("objectName is required"); var v = await s.CreateFileAsync(orderId, bucket, objectName, c); return v is null ? NotFound("Order not found") : CreatedAtRoute("GetOrderFile", new { id = v.Id }, v); }
     [OrderMutationUnavailable]
     [OrderLifetimeConflict]
     [HttpDelete("{id:int}"), RequirePermission(OrderPermissions.FilesDelete)] public async Task<IActionResult> DeleteOrderFileAsync(int id, CancellationToken c) => await s.DeleteFileAsync(id, c) ? NoContent() : NotFound();
