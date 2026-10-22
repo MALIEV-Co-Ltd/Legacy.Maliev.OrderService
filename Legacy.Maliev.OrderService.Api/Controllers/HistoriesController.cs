@@ -102,6 +102,7 @@ public sealed class HistoriesController(IOrderService s, IIdempotencyStore idem)
     [HttpPut("{historyId:int}"), RequirePermission(OrderPermissions.StatusWrite, IsCritical = true)]
     public async Task<IActionResult> UpdateOrderHistoryAsync(int historyId, UpsertOrderStatusHistoryRequest i, [FromHeader(Name = "X-Expected-Modified-Date")] DateTimeOffset? expected, CancellationToken c)
     {
+        if (i is null) return BadRequest();
         var result = await s.UpdateHistoryAsync(historyId, i, expected, c);
         return result == UpdateResult.Updated ? NoContent() : Result(result);
     }

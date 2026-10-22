@@ -34,5 +34,5 @@ public sealed class FilesController(IOrderService s) : ControllerBase
     [HttpGet("/orders/{orderId:int}/files"), RequirePermission(OrderPermissions.FilesRead, ResourcePathTemplate = "/orders/{orderId}")] public async Task<ActionResult<IReadOnlyList<OrderFileResponse>>> GetOrderFilesAsync(int orderId, CancellationToken c) { var v = await s.GetFilesAsync(orderId, c); return v.Count == 0 ? NotFound() : Ok(v); }
     [OrderMutationUnavailable]
     [OrderLifetimeConflict]
-    [HttpPut("{id:int}"), RequirePermission(OrderPermissions.FilesWrite)] public async Task<IActionResult> UpdateOrderFileAsync(int id, UpsertOrderFileRequest i, CancellationToken c) => await s.UpdateFileAsync(id, i, c) ? NoContent() : NotFound();
+    [HttpPut("{id:int}"), RequirePermission(OrderPermissions.FilesWrite)] public async Task<IActionResult> UpdateOrderFileAsync(int id, UpsertOrderFileRequest i, CancellationToken c) { if (i is null) return BadRequest("item is required."); return await s.UpdateFileAsync(id, i, c) ? NoContent() : NotFound(); }
 }
