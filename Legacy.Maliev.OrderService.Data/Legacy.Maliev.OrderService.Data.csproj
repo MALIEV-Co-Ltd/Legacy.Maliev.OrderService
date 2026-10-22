@@ -17,6 +17,8 @@
   </ItemGroup>
 
   <PropertyGroup>
+    <!-- Existing callers and hosted regression fixtures support Redis 7; CAS commands require 8.4. -->
+    <RedisMinServerVersion>7.0</RedisMinServerVersion>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
