@@ -32,8 +32,11 @@ public sealed class OrderStatusNameLookupSourceHttpTests(OrderDeletionReadinessF
         Assert.Equal(2, candidates.Length);
         Assert.Contains(value, candidates);
         using var wire = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        Assert.Equal(new[] { "CreatedDate", "Description", "Id", "ModifiedDate", "Name" },
+        Assert.Equal(new[] { "createdDate", "description", "id", "modifiedDate", "name",
+            "orderStatusHasPossibleStatusOrderStatus", "orderStatusHasPossibleStatusPossibleStatus", "orderStatusHistory" },
             wire.RootElement.EnumerateObject().Select(property => property.Name).Order(StringComparer.Ordinal));
+        foreach (var navigation in new[] { "orderStatusHasPossibleStatusOrderStatus", "orderStatusHasPossibleStatusPossibleStatus", "orderStatusHistory" })
+            Assert.Equal(0, wire.RootElement.GetProperty(navigation).GetArrayLength());
         foreach (var candidate in candidates)
         {
             using var detail = await reader.GetAsync($"/orderstatuses/{candidate.Id}");
