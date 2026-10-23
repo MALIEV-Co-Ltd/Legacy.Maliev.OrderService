@@ -63,28 +63,39 @@ public sealed class FileFormatResponseWireContractTests(OrderDeletionReadinessFi
             Encoding.UTF8, "application/json");
         using var created = await writer.PostAsync("/orders/fileformats", content);
         Assert.Equal(HttpStatusCode.Created, created.StatusCode);
-        var value = (await created.Content.ReadFromJsonAsync<FileFormatResponse>())!;
+        var postBody = await created.Content.ReadAsStringAsync();
+        using var consumerBody = new StringContent(postBody, Encoding.UTF8, "application/json");
+        var value = (await consumerBody.ReadFromJsonAsync<FileFormatResponse>())!;
         Assert.NotEqual(99999999, value.Id);
         Assert.Equal("  ไทย STEP  ", value.Name);
         Assert.Equal(".StEp", value.Extension);
         Assert.Equal(clock.GetUtcNow().UtcDateTime, value.CreatedDate);
         Assert.Equal(clock.GetUtcNow().UtcDateTime, value.ModifiedDate);
-        using var postWire = JsonDocument.Parse(await created.Content.ReadAsStringAsync());
-        AssertSourceWire(postWire.RootElement, value);
+        Assert.Equal(DateTimeKind.Utc, value.CreatedDate!.Value.Kind);
+        Assert.Equal(DateTimeKind.Utc, value.ModifiedDate!.Value.Kind);
+        var fresh = new FileFormatResponse(value.Id, "  ไทย STEP  ", ".StEp",
+            clock.GetUtcNow().UtcDateTime, clock.GetUtcNow().UtcDateTime);
+        using var postWire = JsonDocument.Parse(postBody);
+        AssertSourceWire(postWire.RootElement, fresh);
+        var stored = fresh with
+        {
+            CreatedDate = DateTime.SpecifyKind(clock.GetUtcNow().UtcDateTime, DateTimeKind.Unspecified),
+            ModifiedDate = DateTime.SpecifyKind(clock.GetUtcNow().UtcDateTime, DateTimeKind.Unspecified),
+        };
         Assert.NotNull(created.Headers.Location);
         using var reader = app.CreateClient();
         reader.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", fixture.Token(OrderPermissions.CatalogRead));
         using var detail = await reader.GetAsync(created.Headers.Location);
         Assert.Equal(HttpStatusCode.OK, detail.StatusCode);
         using var detailWire = JsonDocument.Parse(await detail.Content.ReadAsStringAsync());
-        AssertSourceWire(detailWire.RootElement, value);
+        AssertSourceWire(detailWire.RootElement, stored);
         using var list = await reader.GetAsync("/orders/fileformats");
         Assert.Equal(HttpStatusCode.OK, list.StatusCode);
         using var listWire = JsonDocument.Parse(await list.Content.ReadAsStringAsync());
-        AssertSourceWire(Assert.Single(listWire.RootElement.EnumerateArray()), value);
+        AssertSourceWire(Assert.Single(listWire.RootElement.EnumerateArray()), stored);
         await using var scope = app.Services.CreateAsyncScope();
         var database = scope.ServiceProvider.GetRequiredService<OrderDbContext>();
-        Assert.Equal(value, await database.FileFormats.AsNoTracking()
+        Assert.Equal(stored, await database.FileFormats.AsNoTracking()
             .Select(x => new FileFormatResponse(x.Id, x.Name, x.Extension, x.CreatedDate, x.ModifiedDate)).SingleAsync());
     }
 

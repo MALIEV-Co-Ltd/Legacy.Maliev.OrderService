@@ -9,7 +9,7 @@ namespace Legacy.Maliev.OrderService.Api.Controllers;
 [ApiController, Route("[controller]"), Authorize]
 public sealed class OrderStatusesController(IOrderService s) : ControllerBase
 {
-    [HttpPost, RequirePermission(OrderPermissions.StatusWrite)] public async Task<IActionResult> CreateOrderStatusAsync(UpsertOrderStatusRequest i, CancellationToken c) { if (i is null) return BadRequest(); var v = await s.CreateStatusAsync(i, c); return CreatedAtRoute("GetOrderStatus", new { id = v.Id }, v); }
+    [HttpPost, RequirePermission(OrderPermissions.StatusWrite), ProducesResponseType<OrderStatusReadResponse>(StatusCodes.Status201Created)] public async Task<IActionResult> CreateOrderStatusAsync(UpsertOrderStatusRequest i, CancellationToken c) { if (i is null) return BadRequest(); var v = await s.CreateStatusAsync(i, c); return CreatedAtRoute("GetOrderStatus", new { id = v.Id }, OrderStatusReadResponse.FromCreated(v)); }
     [HttpDelete("{id:int}"), RequirePermission(OrderPermissions.StatusDelete)] public async Task<IActionResult> DeleteOrderStatusAsync(int id, CancellationToken c) => await s.DeleteStatusAsync(id, c) ? NoContent() : NotFound();
     [HttpGet, RequirePermission(OrderPermissions.StatusRead)] public async Task<ActionResult<IReadOnlyList<OrderStatusReadResponse>>> GetAllOrderStatusesAsync(CancellationToken c) { var v = await s.GetStatusesAsync(c); return v.Count == 0 ? NotFound() : Ok(v.Select(OrderStatusReadResponse.From).ToArray()); }
     [HttpGet("{id:int}", Name = "GetOrderStatus"), RequirePermission(OrderPermissions.StatusRead)] public async Task<ActionResult<OrderStatusReadResponse>> GetOrderStatusAsync(int id, CancellationToken c) { var v = await s.GetStatusAsync(id, c); return v is null ? NotFound() : OrderStatusReadResponse.From(v); }
