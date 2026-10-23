@@ -62,6 +62,17 @@ public sealed partial class OrderRepository
             .Select(x => new OrderStatusResponse(x.OrderStatus!.Id, x.OrderStatus.Name, x.OrderStatus.Description, x.OrderStatus.CreatedDate, x.OrderStatus.ModifiedDate)).FirstOrDefaultAsync(c);
     }
 
+    public async Task<OrderLatestStatusReadResult?> GetLatestStatusReadAsync(int orderId, CancellationToken c)
+    {
+        await using var authority = FreshOrders();
+        if (await IsDeletedLifetimeAsync(authority, orderId, c)) return null;
+        return await statuses.History.AsNoTracking().Where(x => x.OrderId == orderId).OrderByDescending(x => x.Id)
+            .Select(x => new OrderLatestStatusReadResult(
+                new OrderStatusResponse(x.OrderStatus!.Id, x.OrderStatus.Name, x.OrderStatus.Description, x.OrderStatus.CreatedDate, x.OrderStatus.ModifiedDate),
+                new OrderStatusHistoryResponse(x.Id, x.OrderId, x.OrderStatusId, x.OrderStatus.Name, x.OrderStatus.Description, x.CreatedDate, x.ModifiedDate)))
+            .FirstOrDefaultAsync(c);
+    }
+
     public async Task<IReadOnlyList<OrderStatusHistoryResponse>> GetHistoryAsync(int orderId, CancellationToken c)
     {
         await using var authority = FreshOrders();

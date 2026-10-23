@@ -94,7 +94,7 @@ public sealed class HistoriesController(IOrderService s, IIdempotencyStore idem)
     [OrderLifetimeConflict]
     [HttpDelete("{historyId:int}"), RequirePermission(OrderPermissions.StatusDelete)] public async Task<IActionResult> DeleteHistoryAsync(int historyId, CancellationToken c) => await s.DeleteHistoryAsync(historyId, c) ? NoContent() : NotFound();
     [OrderLifetimeConflict]
-    [HttpGet("{orderId:int}/latest", Name = "GetLatest"), RequirePermission(OrderPermissions.StatusRead)] public async Task<ActionResult<OrderStatusResponse>> GetLatestAsync(int orderId, CancellationToken c) { var v = await s.GetLatestStatusAsync(orderId, c); return v is null ? NotFound() : v; }
+    [HttpGet("{orderId:int}/latest", Name = "GetLatest"), RequirePermission(OrderPermissions.StatusRead)] public async Task<ActionResult<OrderLatestStatusReadResponse>> GetLatestAsync(int orderId, CancellationToken c) { var v = await s.GetLatestStatusReadAsync(orderId, c); return v is null ? NotFound() : OrderLatestStatusReadResponse.From(v); }
     [OrderLifetimeConflict]
     [HttpGet("{orderId:int}", Name = "GetHistory"), RequirePermission(OrderPermissions.StatusRead)]
     public async Task<ActionResult<IReadOnlyList<OrderHistoryStatusResponse>>> GetOrderHistoryAsync(int orderId, CancellationToken c)

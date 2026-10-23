@@ -84,10 +84,10 @@ public sealed class OrderLatestStatusDateSourceHttpTests(OrderDeletionReadinessF
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var body = await response.Content.ReadAsStringAsync();
         var expected = new OrderStatusResponse(latest.Id, latest.Name, latest.Description, latest.CreatedDate, latest.ModifiedDate);
-        Assert.Equal(expected, JsonSerializer.Deserialize<OrderStatusResponse>(body));
+        Assert.Equal(expected, JsonSerializer.Deserialize<OrderStatusResponse>(body, JsonSerializerOptions.Web));
         using var document = JsonDocument.Parse(body);
-        Assert.Equal(!nullDefinitionDates, document.RootElement.TryGetProperty("CreatedDate", out _));
-        Assert.Equal(!nullDefinitionDates, document.RootElement.TryGetProperty("ModifiedDate", out _));
+        Assert.Equal(!nullDefinitionDates, document.RootElement.TryGetProperty("createdDate", out _));
+        Assert.Equal(!nullDefinitionDates, document.RootElement.TryGetProperty("modifiedDate", out _));
 
         using var timeline = await client.GetAsync($"/orderstatuses/histories/{orderId}");
         Assert.Equal(HttpStatusCode.OK, timeline.StatusCode);
