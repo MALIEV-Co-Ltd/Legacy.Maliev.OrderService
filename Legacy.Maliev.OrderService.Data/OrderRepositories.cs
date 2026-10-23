@@ -26,7 +26,11 @@ public sealed partial class OrderRepository(OrderDbContext orders, OrderStatusDb
         try
         {
             await orders.SaveChangesAsync(c);
-            return await ReadOrder(entity.Id, c) ?? throw new InvalidOperationException();
+            var stored = await ReadOrder(entity.Id, c) ?? throw new InvalidOperationException();
+            return stored with
+            {
+                SourceCreation = new(DateTime.SpecifyKind(n, DateTimeKind.Utc), r.PromisedDate, r.FinishedDate),
+            };
         }
         catch (DbUpdateException exception) when (
             !string.IsNullOrWhiteSpace(r.OperationKey)

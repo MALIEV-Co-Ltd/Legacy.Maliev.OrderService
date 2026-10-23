@@ -293,15 +293,35 @@ public sealed class OrderCreateResponseSourceHttpTests(OrderDeletionReadinessFix
 
     private static string Payload(int processId, bool nullable, string? date, string? operationKey = null) => JsonSerializer.Serialize(new
     {
-        Id = 987654, CustomerId = nullable ? (int?)null : 11, EmployeeId = nullable ? (int?)null : 12,
-        Name = nullable ? null : "ไทย source order", Description = nullable ? null : "Source description", ProcessId = processId,
-        MaterialId = nullable ? (int?)null : 13, SurfaceFinishId = nullable ? (int?)null : 14, ColorId = nullable ? (int?)null : 15,
-        Quantity = 3, Manufactured = 1, Remaining = -987, UnitPrice = nullable ? (decimal?)null : 12.34m,
-        DiscountPercent = nullable ? (decimal?)null : 5m, Subtotal = -987m, CurrencyId = nullable ? (int?)null : 16,
-        LeadTime = nullable ? (int?)null : 4, PromisedDate = date, FinishedDate = date, Turnaround = -987,
-        Comment = nullable ? null : "Comment", AllowSocialMedia = true, AllowCancellation = true, AllowPayment = false,
-        TrackingNumber = nullable ? null : "tracking", CreatedDate = "2001-01-01T00:00:00Z", ModifiedDate = "2001-01-01T00:00:00Z",
-        Process = new { Id = 999, Name = "Ignored" }, OrderFile = new[] { new { Id = 999, Bucket = "ignored", ObjectName = "ignored" } },
+        Id = 987654,
+        CustomerId = nullable ? (int?)null : 11,
+        EmployeeId = nullable ? (int?)null : 12,
+        Name = nullable ? null : "ไทย source order",
+        Description = nullable ? null : "Source description",
+        ProcessId = processId,
+        MaterialId = nullable ? (int?)null : 13,
+        SurfaceFinishId = nullable ? (int?)null : 14,
+        ColorId = nullable ? (int?)null : 15,
+        Quantity = 3,
+        Manufactured = 1,
+        Remaining = -987,
+        UnitPrice = nullable ? (decimal?)null : 12.34m,
+        DiscountPercent = nullable ? (decimal?)null : 5m,
+        Subtotal = -987m,
+        CurrencyId = nullable ? (int?)null : 16,
+        LeadTime = nullable ? (int?)null : 4,
+        PromisedDate = date,
+        FinishedDate = date,
+        Turnaround = -987,
+        Comment = nullable ? null : "Comment",
+        AllowSocialMedia = true,
+        AllowCancellation = true,
+        AllowPayment = false,
+        TrackingNumber = nullable ? null : "tracking",
+        CreatedDate = "2001-01-01T00:00:00Z",
+        ModifiedDate = "2001-01-01T00:00:00Z",
+        Process = new { Id = 999, Name = "Ignored" },
+        OrderFile = new[] { new { Id = 999, Bucket = "ignored", ObjectName = "ignored" } },
         OperationKey = operationKey,
     });
 
@@ -309,17 +329,36 @@ public sealed class OrderCreateResponseSourceHttpTests(OrderDeletionReadinessFix
 
     private static OriginalOrder FreshOriginal(OriginalOrder input, Order stored, DateTime created,
         DateTime? promised = null, DateTime? finished = null, DateTime? modified = null) => new()
-    {
-        // Initial source OrderContext marks Name generated-on-add with (N'unnamed'); the CLR/EF control qualifies null's store default.
-        Id = stored.Id, CustomerId = input.CustomerId, EmployeeId = input.EmployeeId, Name = input.Name ?? "unnamed",
-        Description = input.Description, ProcessId = input.ProcessId, MaterialId = input.MaterialId,
-        SurfaceFinishId = input.SurfaceFinishId, ColorId = input.ColorId, Quantity = input.Quantity, Manufactured = input.Manufactured,
-        Remaining = stored.Remaining, UnitPrice = input.UnitPrice, DiscountPercent = input.DiscountPercent, Subtotal = stored.Subtotal,
-        CurrencyId = input.CurrencyId, LeadTime = input.LeadTime, PromisedDate = promised ?? input.PromisedDate,
-        FinishedDate = finished ?? input.FinishedDate, Turnaround = stored.Turnaround, Comment = input.Comment,
-        AllowSocialMedia = input.AllowSocialMedia, AllowCancellation = input.AllowCancellation, AllowPayment = input.AllowPayment,
-        TrackingNumber = input.TrackingNumber, CreatedDate = created, ModifiedDate = modified ?? created,
-    };
+        {
+            // Initial source OrderContext marks Name generated-on-add with (N'unnamed'); the CLR/EF control qualifies null's store default.
+            Id = stored.Id,
+            CustomerId = input.CustomerId,
+            EmployeeId = input.EmployeeId,
+            Name = input.Name ?? "unnamed",
+            Description = input.Description,
+            ProcessId = input.ProcessId,
+            MaterialId = input.MaterialId,
+            SurfaceFinishId = input.SurfaceFinishId,
+            ColorId = input.ColorId,
+            Quantity = input.Quantity,
+            Manufactured = input.Manufactured,
+            Remaining = stored.Remaining,
+            UnitPrice = input.UnitPrice,
+            DiscountPercent = input.DiscountPercent,
+            Subtotal = stored.Subtotal,
+            CurrencyId = input.CurrencyId,
+            LeadTime = input.LeadTime,
+            PromisedDate = promised ?? input.PromisedDate,
+            FinishedDate = finished ?? input.FinishedDate,
+            Turnaround = stored.Turnaround,
+            Comment = input.Comment,
+            AllowSocialMedia = input.AllowSocialMedia,
+            AllowCancellation = input.AllowCancellation,
+            AllowPayment = input.AllowPayment,
+            TrackingNumber = input.TrackingNumber,
+            CreatedDate = created,
+            ModifiedDate = modified ?? created,
+        };
 
     private static string SerializeOriginal(OriginalOrder value)
     {

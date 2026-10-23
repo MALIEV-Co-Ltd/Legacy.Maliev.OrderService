@@ -174,8 +174,8 @@ public sealed class OrderControllerContractTests
         var second = Assert.IsType<CreatedAtRouteResult>(
             await secondController.CreateOrderAsync(Request("Same"), "shared-key", default));
 
-        Assert.Equal(1, Assert.IsType<OrderResponse>(first.Value).Id);
-        Assert.Equal(2, Assert.IsType<OrderResponse>(second.Value).Id);
+        Assert.Equal(1, Assert.IsType<OrderReadResponse>(first.Value).Id);
+        Assert.Equal(2, Assert.IsType<OrderReadResponse>(second.Value).Id);
         service.Verify(
             value => value.CreateOrderAsync(It.IsAny<UpsertOrderRequest>(), It.IsAny<CancellationToken>()),
             Times.Exactly(2));
@@ -250,8 +250,8 @@ public sealed class OrderControllerContractTests
         var second = Assert.IsType<CreatedAtRouteResult>(
             await controller.CreateOrderAsync(Request("Same"), null, default));
 
-        Assert.Equal(1, Assert.IsType<OrderResponse>(first.Value).Id);
-        Assert.Equal(2, Assert.IsType<OrderResponse>(second.Value).Id);
+        Assert.Equal(1, Assert.IsType<OrderReadResponse>(first.Value).Id);
+        Assert.Equal(2, Assert.IsType<OrderReadResponse>(second.Value).Id);
     }
 
     [Theory]
@@ -306,8 +306,8 @@ public sealed class OrderControllerContractTests
             await controller.CreateOrderAsync(Request("Same"), "serialized-key", default));
 
         Assert.Equal(
-            Assert.IsType<OrderResponse>(first.Value),
-            Assert.IsType<OrderResponse>(replay.Value));
+            Assert.IsType<OrderReadResponse>(first.Value),
+            Assert.IsType<OrderReadResponse>(replay.Value));
         service.Verify(
             value => value.CreateOrderAsync(It.IsAny<UpsertOrderRequest>(), It.IsAny<CancellationToken>()),
             Times.Once);

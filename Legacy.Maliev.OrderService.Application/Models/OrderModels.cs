@@ -30,7 +30,33 @@ namespace Legacy.Maliev.OrderService.Application.Models;
 /// <param name="TrackingNumber">Shipment tracking number.</param>
 /// <param name="CreatedDate">Server creation timestamp.</param>
 /// <param name="ModifiedDate">Server modification timestamp used for optimistic concurrency.</param>
-public sealed record OrderResponse(int Id, int? CustomerId, int? EmployeeId, string? Name, string? Description, int ProcessId, int? MaterialId, int? SurfaceFinishId, int? ColorId, int Quantity, int Manufactured, int? Remaining, decimal? UnitPrice, decimal? DiscountPercent, decimal? Subtotal, int? CurrencyId, int? LeadTime, DateTime? PromisedDate, DateTime? FinishedDate, int? Turnaround, string? Comment, bool AllowSocialMedia, bool AllowCancellation, bool AllowPayment, string? TrackingNumber, DateTime? CreatedDate, DateTime? ModifiedDate);
+public sealed record OrderResponse(int Id, int? CustomerId, int? EmployeeId, string? Name, string? Description, int ProcessId, int? MaterialId, int? SurfaceFinishId, int? ColorId, int Quantity, int Manufactured, int? Remaining, decimal? UnitPrice, decimal? DiscountPercent, decimal? Subtotal, int? CurrencyId, int? LeadTime, DateTime? PromisedDate, DateTime? FinishedDate, int? Turnaround, string? Comment, bool AllowSocialMedia, bool AllowCancellation, bool AllowPayment, string? TrackingNumber, DateTime? CreatedDate, DateTime? ModifiedDate)
+{
+    /// <summary>Fresh insert values used only by the original HTTP response adapter.</summary>
+    [JsonIgnore] public OrderCreationSource? SourceCreation { get; init; }
+
+    // Creation context does not alter the existing scalar value identity of stored snapshots.
+    public bool Equals(OrderResponse? other) => other is not null
+        && (Id, CustomerId, EmployeeId, Name, Description, ProcessId,
+            MaterialId, SurfaceFinishId, ColorId, Quantity, Manufactured, Remaining,
+            UnitPrice, DiscountPercent, Subtotal, CurrencyId, LeadTime, PromisedDate,
+            FinishedDate, Turnaround, Comment, AllowSocialMedia, AllowCancellation, AllowPayment,
+            TrackingNumber, CreatedDate, ModifiedDate)
+        == (other.Id, other.CustomerId, other.EmployeeId, other.Name, other.Description, other.ProcessId,
+            other.MaterialId, other.SurfaceFinishId, other.ColorId, other.Quantity, other.Manufactured, other.Remaining,
+            other.UnitPrice, other.DiscountPercent, other.Subtotal, other.CurrencyId, other.LeadTime, other.PromisedDate,
+            other.FinishedDate, other.Turnaround, other.Comment, other.AllowSocialMedia, other.AllowCancellation, other.AllowPayment,
+            other.TrackingNumber, other.CreatedDate, other.ModifiedDate);
+
+    public override int GetHashCode() => HashCode.Combine(
+        HashCode.Combine(Id, CustomerId, EmployeeId, Name, Description, ProcessId, MaterialId, SurfaceFinishId),
+        HashCode.Combine(ColorId, Quantity, Manufactured, Remaining, UnitPrice, DiscountPercent, Subtotal, CurrencyId),
+        HashCode.Combine(LeadTime, PromisedDate, FinishedDate, Turnaround, Comment, AllowSocialMedia, AllowCancellation, AllowPayment),
+        HashCode.Combine(TrackingNumber, CreatedDate, ModifiedDate));
+}
+
+/// <summary>Original fresh-entity dates before database calendar/precision normalization.</summary>
+public sealed record OrderCreationSource(DateTime CreatedDate, DateTime? PromisedDate, DateTime? FinishedDate);
 /// <summary>Writable order fields; computed values and server timestamps are not accepted.</summary>
 /// <param name="CustomerId">External customer scalar reference.</param>
 /// <param name="EmployeeId">External employee scalar reference.</param>
