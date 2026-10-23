@@ -202,12 +202,28 @@ public sealed class OrderCreatePrecisionSourceHttpTests(OrderDeletionReadinessFi
     private static string Payload(int processId, decimal? price, decimal? discount, string? operationKey = null) =>
         JsonSerializer.Serialize(new
         {
-            CustomerId = (int?)11, EmployeeId = (int?)12, Name = "Source precision", Description = "Owned response witness",
-            ProcessId = processId, MaterialId = (int?)13, SurfaceFinishId = (int?)14, ColorId = (int?)15,
-            Quantity = 3, Manufactured = 1, UnitPrice = price, DiscountPercent = discount, CurrencyId = (int?)16,
-            LeadTime = (int?)null, PromisedDate = (DateTime?)null, FinishedDate = (DateTime?)null,
-            Comment = "Source response only", AllowSocialMedia = false, AllowCancellation = false, AllowPayment = false,
-            TrackingNumber = (string?)null, OperationKey = operationKey,
+            CustomerId = (int?)11,
+            EmployeeId = (int?)12,
+            Name = "Source precision",
+            Description = "Owned response witness",
+            ProcessId = processId,
+            MaterialId = (int?)13,
+            SurfaceFinishId = (int?)14,
+            ColorId = (int?)15,
+            Quantity = 3,
+            Manufactured = 1,
+            UnitPrice = price,
+            DiscountPercent = discount,
+            CurrencyId = (int?)16,
+            LeadTime = (int?)null,
+            PromisedDate = (DateTime?)null,
+            FinishedDate = (DateTime?)null,
+            Comment = "Source response only",
+            AllowSocialMedia = false,
+            AllowCancellation = false,
+            AllowPayment = false,
+            TrackingNumber = (string?)null,
+            OperationKey = operationKey,
         });
 
     private static async Task<int> SeedAsync(OrderDbContext db, CancellationToken token)
