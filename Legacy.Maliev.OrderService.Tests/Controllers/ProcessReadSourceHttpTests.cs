@@ -83,6 +83,11 @@ public sealed class ProcessReadSourceHttpTests(OrderDeletionReadinessFixture fix
         Assert.Equal(HttpStatusCode.OK, list.StatusCode);
         Assert.True(JsonNode.DeepEquals(JsonNode.Parse(SerializeOriginal(OriginalGraph(originals))),
             JsonNode.Parse(await list.Content.ReadAsStringAsync(deadline.Token))));
+        // Intranet's inspected client reads five scalars; its BFF lookup reads only ID/name.
+        var intranet = await list.Content.ReadFromJsonAsync<ProcessResponse[]>(deadline.Token);
+        Assert.Equal(originals.Select(row => new ProcessResponse(row.Id, row.CategoryId, row.Name, row.CreatedDate, row.ModifiedDate)), intranet!);
+        var lookup = await list.Content.ReadFromJsonAsync<IntranetProcessLookup[]>(deadline.Token);
+        Assert.Equal(originals.Select(row => new IntranetProcessLookup(row.Id, row.Name)), lookup!);
         foreach (var original in originals)
         {
             using var response = await client.GetAsync($"/orders/processes/{original.Id}", deadline.Token);
@@ -251,4 +256,5 @@ public sealed class ProcessReadSourceHttpTests(OrderDeletionReadinessFixture fix
     }
 
     private sealed record WebProcessConsumer(int Id, int CategoryId, string Name);
+    private sealed record IntranetProcessLookup(int Id, string Name);
 }
