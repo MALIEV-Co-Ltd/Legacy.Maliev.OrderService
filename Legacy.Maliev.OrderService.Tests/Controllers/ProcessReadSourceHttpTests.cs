@@ -171,6 +171,18 @@ public sealed class ProcessReadSourceHttpTests(OrderDeletionReadinessFixture fix
             output.GetProperty("properties").EnumerateObject().Select(property => property.Name).Order(StringComparer.Ordinal));
         Assert.Equal(new[] { "createdDate", "id", "modifiedDate", "name", "process" },
             schemas.GetProperty("ProcessCategoryReadResponse").GetProperty("properties").EnumerateObject().Select(property => property.Name).Order(StringComparer.Ordinal));
+        foreach (var (schemaName, optional) in new[]
+        {
+            ("ProcessReadResponse", new[] { "category", "createdDate", "modifiedDate" }),
+            ("ProcessCategoryReadResponse", new[] { "name", "createdDate", "modifiedDate" }),
+        })
+        {
+            var schema = schemas.GetProperty(schemaName);
+            var required = schema.TryGetProperty("required", out var names)
+                ? names.EnumerateArray().Select(name => name.GetString()).ToArray() : [];
+            foreach (var name in optional) Assert.DoesNotContain(name, required);
+            Assert.Contains("id", required);
+        }
         Assert.True(schemas.GetProperty("ProcessResponse").GetProperty("properties").TryGetProperty("CategoryId", out _));
         Assert.True(schemas.GetProperty("UpsertProcessRequest").GetProperty("properties").TryGetProperty("Name", out _));
         using var internalWire = JsonDocument.Parse(JsonSerializer.Serialize(new ProcessResponse(1, 2, "Internal", null, null)));
