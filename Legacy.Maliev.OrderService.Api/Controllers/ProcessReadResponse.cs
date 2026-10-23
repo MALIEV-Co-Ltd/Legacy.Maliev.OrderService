@@ -28,6 +28,14 @@ public sealed record ProcessReadResponse(
     public static ProcessReadResponse From(ProcessReadResult value) =>
         new(value.Process.Id, value.Process.CategoryId, value.Process.Name, value.Process.CreatedDate, value.Process.ModifiedDate,
             value.Category is { } category ? new(category.Id, category.Name, category.CreatedDate, category.ModifiedDate) : null);
+
+    /// <summary>Preserves the original newly constructed entity's UTC dates and unloaded navigations.</summary>
+    /// <param name="value">The internal newly created process projection.</param>
+    /// <returns>The original Process POST representation.</returns>
+    public static ProcessReadResponse FromCreated(ProcessResponse value) =>
+        new(value.Id, value.CategoryId, value.Name,
+            value.CreatedDate is { } created ? DateTime.SpecifyKind(created, DateTimeKind.Utc) : null,
+            value.ModifiedDate is { } modified ? DateTime.SpecifyKind(modified, DateTimeKind.Utc) : null, null);
 }
 
 /// <summary>The category loaded by the original no-tracking filtered process query.</summary>

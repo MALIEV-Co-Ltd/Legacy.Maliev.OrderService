@@ -61,7 +61,7 @@ public sealed class OrderCategoryScalarStringHttpTests(OrderDeletionReadinessFix
         using var fresh = await reader.GetAsync($"/orders/categories/{id}");
         Assert.Equal(HttpStatusCode.OK, fresh.StatusCode);
         using var wire = JsonDocument.Parse(await fresh.Content.ReadAsStringAsync());
-        foreach (var field in new[] { "Name" })
+        foreach (var field in new[] { "name" })
         {
             if (expected is null) Assert.False(wire.RootElement.TryGetProperty(field, out _));
             else

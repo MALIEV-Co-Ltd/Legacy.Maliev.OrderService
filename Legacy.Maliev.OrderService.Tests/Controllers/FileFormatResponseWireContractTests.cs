@@ -141,7 +141,7 @@ public sealed class FileFormatResponseWireContractTests(OrderDeletionReadinessFi
         Assert.Equal(new[] { "Extension", "Name" },
             schemas["UpsertFileFormatRequest"]!["properties"]!.AsObject()
                 .Select(property => property.Key).Order(StringComparer.Ordinal));
-        Assert.True(schemas["CategoryResponse"]!["properties"]!.AsObject().ContainsKey("Id"));
+        Assert.True(schemas["CategoryReadResponse"]!["properties"]!.AsObject().ContainsKey("id"));
     }
 
     private static JsonSerializerOptions ResponseOptions() => new()

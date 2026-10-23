@@ -45,7 +45,7 @@ public sealed class OrderOriginalInputHttpTests(OrderDeletionReadinessFixture fi
             using var fresh = await reader.GetAsync(response.Headers.Location);
             Assert.Equal(HttpStatusCode.OK, fresh.StatusCode);
             using var wire = JsonDocument.Parse(await fresh.Content.ReadAsStringAsync());
-            Assert.Equal(id, wire.RootElement.GetProperty(kind is "format" or "status" or "process" ? "id" : "Id").GetInt32());
+            Assert.Equal(id, wire.RootElement.GetProperty(kind is "category" or "format" or "status" or "process" ? "id" : "Id").GetInt32());
             if (kind == "process")
             {
                 Assert.Empty(wire.RootElement.GetProperty("order").EnumerateArray());
@@ -311,7 +311,7 @@ public sealed class OrderOriginalInputHttpTests(OrderDeletionReadinessFixture fi
     private static async Task<int> CreatedIdAsync(HttpResponseMessage response, string kind)
     {
         using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        return json.RootElement.GetProperty(kind == "format" ? "id" : "Id").GetInt32();
+        return json.RootElement.GetProperty(kind is "category" or "format" or "process" ? "id" : "Id").GetInt32();
     }
     private static async Task AssertStoredAsync(WebApplicationFactory<Program> app, string kind, int id, string expected = "kept")
     {
