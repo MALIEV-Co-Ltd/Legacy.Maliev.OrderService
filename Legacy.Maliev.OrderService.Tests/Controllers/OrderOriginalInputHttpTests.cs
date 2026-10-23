@@ -45,7 +45,7 @@ public sealed class OrderOriginalInputHttpTests(OrderDeletionReadinessFixture fi
             using var fresh = await reader.GetAsync(response.Headers.Location);
             Assert.Equal(HttpStatusCode.OK, fresh.StatusCode);
             using var wire = JsonDocument.Parse(await fresh.Content.ReadAsStringAsync());
-            Assert.Equal(id, wire.RootElement.GetProperty(kind == "format" ? "id" : "Id").GetInt32());
+            Assert.Equal(id, wire.RootElement.GetProperty(kind is "format" or "status" ? "id" : "Id").GetInt32());
             Assert.False(wire.RootElement.TryGetProperty("Process", out _));
             Assert.False(wire.RootElement.TryGetProperty("OrderStatusHistory", out _));
         }

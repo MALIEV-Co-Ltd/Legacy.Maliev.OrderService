@@ -57,7 +57,7 @@ public sealed class OrderStatusScalarStringHttpTests(OrderDeletionReadinessFixtu
         using var fresh = await reader.GetAsync($"/orderstatuses/{id}");
         Assert.Equal(HttpStatusCode.OK, fresh.StatusCode);
         using var wire = JsonDocument.Parse(await fresh.Content.ReadAsStringAsync());
-        foreach (var field in new[] { "Name", "Description" })
+        foreach (var field in new[] { "name", "description" })
         {
             if (expected is null) Assert.False(wire.RootElement.TryGetProperty(field, out _));
             else
@@ -164,8 +164,8 @@ public sealed class OrderStatusScalarStringHttpTests(OrderDeletionReadinessFixtu
         Assert.Equal(id, (await named.Content.ReadFromJsonAsync<OrderStatusResponse>())!.Id);
         using var fresh = await reader.GetAsync($"/orderstatuses/{id}");
         using var wire = JsonDocument.Parse(await fresh.Content.ReadAsStringAsync());
-        Assert.Equal(JsonValueKind.String, wire.RootElement.GetProperty("Name").ValueKind);
-        Assert.False(wire.RootElement.TryGetProperty("Description", out _));
+        Assert.Equal(JsonValueKind.String, wire.RootElement.GetProperty("name").ValueKind);
+        Assert.False(wire.RootElement.TryGetProperty("description", out _));
         if (original is not null)
         {
             Assert.Equal(original.CreatedDate, current.CreatedDate);
