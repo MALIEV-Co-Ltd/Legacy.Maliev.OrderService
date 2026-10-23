@@ -91,8 +91,11 @@ public sealed class OrderLatestStatusDateSourceHttpTests(OrderDeletionReadinessF
 
         using var timeline = await client.GetAsync($"/orderstatuses/histories/{orderId}");
         Assert.Equal(HttpStatusCode.OK, timeline.StatusCode);
-        var events = JsonSerializer.Deserialize<OrderStatusHistoryResponse[]>(await timeline.Content.ReadAsStringAsync())!;
-        var eventRow = Assert.Single(events, x => x.Id == last.Id);
+        var events = JsonSerializer.Deserialize<OrderStatusResponse[]>(await timeline.Content.ReadAsStringAsync(), JsonSerializerOptions.Web)!;
+        Assert.Equal(new[] { 1, 2 }, events.Select(row => row.Id));
+        var eventRow = Assert.Single(events, x => x.CreatedDate == last.CreatedDate);
+        Assert.Equal(1, eventRow.Id);
+        Assert.Equal(latest.Name, eventRow.Name);
         Assert.Equal(last.CreatedDate, eventRow.CreatedDate);
         Assert.Equal(last.ModifiedDate, eventRow.ModifiedDate);
         Assert.Equal(beforeDefinitions, await statuses.Statuses.AsNoTracking().OrderBy(x => x.Id)

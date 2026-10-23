@@ -173,8 +173,10 @@ public sealed class OrderHistoryReadSourceHttpTests(OrderDeletionReadinessFixtur
         await statuses.SaveChangesAsync();
         statuses.History.Add(new OrderStatusHistory
         {
-            OrderId = OrderId + 1, OrderStatusId = second.Id,
-            CreatedDate = new DateTime(2020, 1, 1), ModifiedDate = new DateTime(2020, 1, 2),
+            OrderId = OrderId + 1,
+            OrderStatusId = second.Id,
+            CreatedDate = new DateTime(2020, 1, 1),
+            ModifiedDate = new DateTime(2020, 1, 2),
         });
         await statuses.SaveChangesAsync();
         var late = new OrderStatusHistory { OrderId = OrderId, OrderStatusId = first.Id, CreatedDate = new DateTime(2025, 1, 1), ModifiedDate = new DateTime(2025, 1, 2) };
