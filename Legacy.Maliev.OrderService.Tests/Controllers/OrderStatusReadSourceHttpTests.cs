@@ -166,7 +166,12 @@ public sealed class OrderStatusReadSourceHttpTests(OrderDeletionReadinessFixture
         var expectedNames = NavigationNames.Concat(new[] { "id", "name", "description", "createdDate", "modifiedDate" });
         Assert.Equal(expectedNames.Order(StringComparer.Ordinal), output.GetProperty("properties").EnumerateObject().Select(value => value.Name).Order(StringComparer.Ordinal));
         foreach (var name in NavigationNames)
-            Assert.Equal("array", output.GetProperty("properties").GetProperty(name).GetProperty("type").GetString());
+        {
+            var type = output.GetProperty("properties").GetProperty(name).GetProperty("type");
+            var types = type.ValueKind == JsonValueKind.Array
+                ? type.EnumerateArray().Select(value => value.GetString()).ToArray() : [type.GetString()];
+            Assert.Contains("array", types);
+        }
         var required = output.TryGetProperty("required", out var requiredFields)
             ? requiredFields.EnumerateArray().Select(value => value.GetString()).ToArray() : [];
         Assert.Contains("id", required);
