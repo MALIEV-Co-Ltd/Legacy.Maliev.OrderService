@@ -43,6 +43,12 @@ b.Services.AddOpenApi("v1", options => options.AddSchemaTransformer((schema, con
     if (context.JsonTypeInfo.Type == typeof(Legacy.Maliev.OrderService.Api.Controllers.CategoryReadResponse))
         foreach (var propertyName in new[] { "name", "createdDate", "modifiedDate" })
             schema.Required?.Remove(propertyName);
+    if (context.JsonTypeInfo.Type == typeof(Legacy.Maliev.OrderService.Api.Controllers.OrderFileReadResponse))
+        foreach (var propertyName in new[] { "createdDate", "modifiedDate", "order" })
+            schema.Required?.Remove(propertyName);
+    if (context.JsonTypeInfo.Type == typeof(Legacy.Maliev.OrderService.Api.Controllers.OrderReadResponse))
+        foreach (var propertyName in new[] { "customerId", "employeeId", "name", "description", "materialId", "surfaceFinishId", "colorId", "remaining", "unitPrice", "discountPercent", "subtotal", "currencyId", "leadTime", "promisedDate", "finishedDate", "turnaround", "comment", "trackingNumber", "createdDate", "modifiedDate" })
+            schema.Required?.Remove(propertyName);
     return Task.CompletedTask;
 }));
 b.Services.AddSingleton(TimeProvider.System); b.Services.AddScoped<DistributedOrderCache>(); b.Services.AddScoped<IOrderCache>(p => p.GetRequiredService<DistributedOrderCache>()); b.Services.AddScoped<IIdempotencyStore>(p => p.GetRequiredService<DistributedOrderCache>()); b.Services.AddScoped<IOrderService, OrderRepository>(); b.Services.AddOptions<OrderDeletionRecoveryOptions>().BindConfiguration("OrderDeletionRecovery"); b.Services.AddScoped<OrderDeletionAdmissionFilter>(); b.Services.AddHealthChecks().AddCheck<OrderDeletionReadinessHealthCheck>("order-deletion-schema", tags: ["ready"]); AddDeletionRecovery(b.Services); var app = b.Build(); app.UseStandardMiddleware(); app.UseCors(); app.UseAuthentication(); app.UseAuthorization(); app.MapDefaultEndpoints("order"); app.MapControllers(); app.MapApiDocumentation(servicePrefix: "order"); await app.RunAsync(); public partial class Program;

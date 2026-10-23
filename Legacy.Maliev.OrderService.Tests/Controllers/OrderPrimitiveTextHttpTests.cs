@@ -62,7 +62,7 @@ public sealed class OrderPrimitiveTextHttpTests(OrderDeletionReadinessFixture fi
         using var fresh = await reader.GetAsync($"/Orders/{id}");
         Assert.Equal(HttpStatusCode.OK, fresh.StatusCode);
         using var wire = JsonDocument.Parse(await fresh.Content.ReadAsStringAsync());
-        foreach (var field in new[] { "Name", "Description" })
+        foreach (var field in new[] { "name", "description" })
         {
             Assert.Equal(JsonValueKind.String, wire.RootElement.GetProperty(field).ValueKind);
             Assert.Equal(expected, wire.RootElement.GetProperty(field).GetString());
@@ -210,12 +210,12 @@ public sealed class OrderPrimitiveTextHttpTests(OrderDeletionReadinessFixture fi
         if (update)
         {
             Assert.Null(stored.Name);
-            Assert.False(wire.RootElement.TryGetProperty("Name", out _));
+            Assert.False(wire.RootElement.TryGetProperty("name", out _));
         }
         else
         {
             Assert.Equal("unnamed", stored.Name);
-            Assert.Equal("unnamed", wire.RootElement.GetProperty("Name").GetString());
+            Assert.Equal("unnamed", wire.RootElement.GetProperty("name").GetString());
         }
     }
 
@@ -236,8 +236,8 @@ public sealed class OrderPrimitiveTextHttpTests(OrderDeletionReadinessFixture fi
         using var read = await reader.GetAsync($"/Orders/{id}");
         Assert.Equal(HttpStatusCode.OK, read.StatusCode);
         using var wire = JsonDocument.Parse(await read.Content.ReadAsStringAsync());
-        Assert.Equal("Control", wire.RootElement.GetProperty("Name").GetString());
-        Assert.False(wire.RootElement.TryGetProperty("Description", out _));
+        Assert.Equal("Control", wire.RootElement.GetProperty("name").GetString());
+        Assert.False(wire.RootElement.TryGetProperty("description", out _));
         await using var scope = app.Services.CreateAsyncScope();
         Assert.Null((await scope.ServiceProvider.GetRequiredService<OrderDbContext>().Orders.AsNoTracking().SingleAsync(value => value.Id == id)).Description);
     }

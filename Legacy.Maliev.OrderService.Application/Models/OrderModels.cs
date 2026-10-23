@@ -85,7 +85,18 @@ public sealed record FileFormatResponse(
     [property: JsonPropertyName("extension")] string? Extension,
     [property: JsonPropertyName("createdDate")] DateTime? CreatedDate,
     [property: JsonPropertyName("modifiedDate")] DateTime? ModifiedDate); public sealed record UpsertFileFormatRequest([property: JsonConverter(typeof(FileFormatScalarStringJsonConverter))] string? Name, [property: JsonConverter(typeof(FileFormatScalarStringJsonConverter))] string? Extension);
-public sealed record OrderFileResponse(int Id, int OrderId, string Bucket, string ObjectName, DateTime? CreatedDate, DateTime? ModifiedDate);
+public sealed record OrderFileResponse(int Id, int OrderId, string Bucket, string ObjectName, DateTime? CreatedDate, DateTime? ModifiedDate)
+{
+    // Transaction-local creation context is consumed only by the original HTTP response adapter.
+    [JsonIgnore] public OrderResponse? SourceCreatedOrder { get; init; }
+    [JsonIgnore] public bool IsFreshSourceCreation { get; init; }
+
+    // Preserve the existing six-field value identity for internal readers and duplicate metadata results.
+    public bool Equals(OrderFileResponse? other) => other is not null
+        && Id == other.Id && OrderId == other.OrderId && Bucket == other.Bucket && ObjectName == other.ObjectName
+        && CreatedDate == other.CreatedDate && ModifiedDate == other.ModifiedDate;
+    public override int GetHashCode() => HashCode.Combine(Id, OrderId, Bucket, ObjectName, CreatedDate, ModifiedDate);
+}
 /// <summary>Bucket and object metadata for an owned order; no object upload is performed.</summary>
 /// <example>{"OrderId":42,"Bucket":"metadata-bucket","ObjectName":"drawings/part.step"}</example>
 /// <param name="OrderId">Source HTTP omission or null binds zero; direct DTO callers may pass null to preserve the existing owner.</param>

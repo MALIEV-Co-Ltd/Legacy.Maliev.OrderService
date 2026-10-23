@@ -21,6 +21,8 @@ namespace Legacy.Maliev.OrderService.Tests.Controllers;
 public sealed class OrderReadResponseSourceHttpTests(OrderDeletionReadinessFixture fixture)
     : IClassFixture<OrderDeletionReadinessFixture>
 {
+    private static int nextOrderId = 700_000;
+
     [Theory]
     [InlineData("detail", 0)]
     [InlineData("detail", 1)]
@@ -234,6 +236,10 @@ public sealed class OrderReadResponseSourceHttpTests(OrderDeletionReadinessFixtu
         if (nullDates == 3 && !customerScoped) first.CustomerId = null;
         var second = Row(process, true, true);
         var foreign = Row(process, false, false);
+        // AppAsync creates fresh databases while this class fixture shares Redis; cache keys use only Order ID.
+        first.Id = Interlocked.Add(ref nextOrderId, 3);
+        second.Id = first.Id + 1;
+        foreign.Id = first.Id + 2;
         foreign.CustomerId = 99;
         db.Orders.Add(first);
         await db.SaveChangesAsync();
