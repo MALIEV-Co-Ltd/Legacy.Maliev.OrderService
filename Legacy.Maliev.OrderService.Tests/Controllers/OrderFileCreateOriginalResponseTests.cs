@@ -47,7 +47,9 @@ public sealed class OrderFileCreateOriginalResponseTests
         var created = Assert.IsType<CreatedAtRouteResult>(result);
         Assert.Equal("GetOrderFile", created.RouteName);
         Assert.Equal(file.Id, created.RouteValues!["id"]);
-        Assert.Same(file, created.Value);
+        var response = Assert.IsType<OrderFileReadResponse>(created.Value);
+        Assert.Equal(new OrderFileReadResponse(file.Id, file.OrderId, file.Bucket, file.ObjectName,
+            file.CreatedDate, file.ModifiedDate), response);
         service.Verify(value => value.CreateFileAsync(id, bucket, objectName, cancellation.Token), Times.Once);
         service.VerifyNoOtherCalls();
     }
