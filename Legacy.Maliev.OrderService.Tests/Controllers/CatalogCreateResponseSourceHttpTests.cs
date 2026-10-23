@@ -131,7 +131,7 @@ public sealed class CatalogCreateResponseSourceHttpTests(OrderDeletionReadinessF
         Assert.False(JsonNode.DeepEquals(JsonNode.Parse(fresh.RootElement.GetRawText()), JsonNode.Parse(find.RootElement.GetRawText())));
         if (original is OriginalStatus status)
         {
-            Assert.IsType<HashSet<Maliev.OrderStatusService.Data.Database.OrderStatusContext.OrderStatusHistory>>(status.OrderStatusHistory);
+            Assert.IsType<HashSet<global::Maliev.OrderStatusService.Data.Database.OrderStatusContext.OrderStatusHistory>>(status.OrderStatusHistory);
             foreach (var navigation in NavigationNames) Assert.Empty(fresh.RootElement.GetProperty(navigation).EnumerateArray());
         }
     }
