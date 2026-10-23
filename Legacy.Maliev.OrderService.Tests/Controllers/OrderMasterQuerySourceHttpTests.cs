@@ -167,14 +167,14 @@ public sealed class OrderMasterQuerySourceHttpTests(OrderDeletionReadinessFixtur
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
             using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
             var root = document.RootElement;
-            Assert.Equal(new[] { "HasNextPage", "HasPreviousPage", "Items", "PageIndex", "TotalPages", "TotalRecords" },
+            Assert.Equal(new[] { "hasNextPage", "hasPreviousPage", "items", "pageIndex", "totalPages", "totalRecords" },
                 root.EnumerateObject().Select(property => property.Name).Order(StringComparer.Ordinal));
-            Assert.Equal(Enumerable.Range(1, count), root.GetProperty("Items").EnumerateArray().Select(item => item.GetProperty("Id").GetInt32()));
-            Assert.Equal(1, root.GetProperty("PageIndex").GetInt32());
-            Assert.Equal(count, root.GetProperty("TotalRecords").GetInt32());
-            Assert.Equal(1, root.GetProperty("TotalPages").GetInt32());
-            Assert.False(root.GetProperty("HasNextPage").GetBoolean());
-            Assert.False(root.GetProperty("HasPreviousPage").GetBoolean());
+            Assert.Equal(Enumerable.Range(1, count), root.GetProperty("items").EnumerateArray().Select(item => item.GetProperty("id").GetInt32()));
+            Assert.Equal(1, root.GetProperty("pageIndex").GetInt32());
+            Assert.Equal(count, root.GetProperty("totalRecords").GetInt32());
+            Assert.Equal(1, root.GetProperty("totalPages").GetInt32());
+            Assert.False(root.GetProperty("hasNextPage").GetBoolean());
+            Assert.False(root.GetProperty("hasPreviousPage").GetBoolean());
             var page = (await response.Content.ReadFromJsonAsync<PaginatedResponse<OrderResponse>>())!;
             Assert.All(page.Items, item =>
             {
