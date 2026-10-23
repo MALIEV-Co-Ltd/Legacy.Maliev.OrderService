@@ -36,10 +36,12 @@ public sealed record OrderReadResponse(
     // Unloaded orders and fresh file reference-loop omission both leave this collection empty.
     [JsonPropertyName("orderFile")] public IReadOnlyList<object> OrderFile { get; } = [];
 
-    /// <summary>Uses fresh insert dates only when the repository confirms a new row was created.</summary>
+    /// <summary>Uses original fresh values only when the repository confirms a new row was created.</summary>
     public static OrderReadResponse FromCreated(OrderResponse value) => value.SourceCreation is { } source
         ? From(value) with
         {
+            UnitPrice = source.UnitPrice,
+            DiscountPercent = source.DiscountPercent,
             PromisedDate = source.PromisedDate,
             FinishedDate = source.FinishedDate,
             CreatedDate = source.CreatedDate,

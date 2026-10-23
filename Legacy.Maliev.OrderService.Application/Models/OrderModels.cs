@@ -55,8 +55,8 @@ public sealed record OrderResponse(int Id, int? CustomerId, int? EmployeeId, str
         HashCode.Combine(TrackingNumber, CreatedDate, ModifiedDate));
 }
 
-/// <summary>Original fresh-entity dates before database calendar/precision normalization.</summary>
-public sealed record OrderCreationSource(DateTime CreatedDate, DateTime? PromisedDate, DateTime? FinishedDate);
+/// <summary>Original fresh-entity values before database calendar and decimal precision normalization.</summary>
+public sealed record OrderCreationSource(DateTime CreatedDate, DateTime? PromisedDate, DateTime? FinishedDate, decimal? UnitPrice, decimal? DiscountPercent);
 /// <summary>Writable order fields; computed values and server timestamps are not accepted.</summary>
 /// <param name="CustomerId">External customer scalar reference.</param>
 /// <param name="EmployeeId">External employee scalar reference.</param>
