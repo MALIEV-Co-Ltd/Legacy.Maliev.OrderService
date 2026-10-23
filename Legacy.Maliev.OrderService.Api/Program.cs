@@ -31,7 +31,8 @@ b.Services.AddOpenApi("v1", options => options.AddSchemaTransformer((schema, con
         || context.JsonTypeInfo.Type == typeof(Legacy.Maliev.OrderService.Api.Controllers.OrderLatestStatusReadResponse))
         foreach (var propertyName in new[] { "name", "description", "createdDate", "modifiedDate" })
             schema.Required?.Remove(propertyName);
-    if (context.JsonTypeInfo.Type == typeof(Legacy.Maliev.OrderService.Api.Controllers.OrderLatestHistoryReadResponse))
+    if (context.JsonTypeInfo.Type == typeof(Legacy.Maliev.OrderService.Api.Controllers.OrderLatestHistoryReadResponse)
+        || context.JsonTypeInfo.Type == typeof(Legacy.Maliev.OrderService.Api.Controllers.OrderHistoryCreateResponse))
         foreach (var propertyName in new[] { "createdDate", "modifiedDate" })
             schema.Required?.Remove(propertyName);
     if (context.JsonTypeInfo.Type == typeof(Legacy.Maliev.OrderService.Api.Controllers.ProcessReadResponse))

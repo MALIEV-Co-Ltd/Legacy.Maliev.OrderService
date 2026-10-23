@@ -11,62 +11,78 @@ public sealed class HistoriesController(IOrderService s, IIdempotencyStore idem)
 {
     [OrderMutationUnavailable]
     [OrderLifetimeConflict]
+    [ProducesResponseType<OrderHistoryCreateResponse>(StatusCodes.Status201Created)]
     [HttpPost("{orderId:int}/accepted"), RequirePermission(OrderPermissions.StatusWrite, IsCritical = true)] public Task<IActionResult> CreateOrderHistoryAcceptedStatusAsync(int orderId, [FromHeader(Name = "Idempotency-Key")] string? key, CancellationToken c) => Named(orderId, "Accepted", key, c);
     [OrderMutationUnavailable]
     [OrderLifetimeConflict]
+    [ProducesResponseType<OrderHistoryCreateResponse>(StatusCodes.Status201Created)]
     [HttpPost("{orderId:int}/cancelled"), RequirePermission(OrderPermissions.StatusWrite, IsCritical = true)] public Task<IActionResult> CreateOrderHistoryCancelledStatusAsync(int orderId, [FromHeader(Name = "Idempotency-Key")] string? key, CancellationToken c) => Named(orderId, "Cancelled", key, c);
     [OrderMutationUnavailable]
     [OrderLifetimeConflict]
+    [ProducesResponseType<OrderHistoryCreateResponse>(StatusCodes.Status201Created)]
     [HttpPost("{orderId:int}/declined"), RequirePermission(OrderPermissions.StatusWrite, IsCritical = true)] public Task<IActionResult> CreateOrderHistoryDeclinedStatusAsync(int orderId, [FromHeader(Name = "Idempotency-Key")] string? key, CancellationToken c) => Named(orderId, "Declined", key, c);
     [OrderMutationUnavailable]
     [OrderLifetimeConflict]
+    [ProducesResponseType<OrderHistoryCreateResponse>(StatusCodes.Status201Created)]
     [HttpPost("{orderId:int}/expired"), RequirePermission(OrderPermissions.StatusWrite, IsCritical = true)] public Task<IActionResult> CreateOrderHistoryExpiredStatusAsync(int orderId, [FromHeader(Name = "Idempotency-Key")] string? key, CancellationToken c) => Named(orderId, "Expired", key, c);
     [OrderMutationUnavailable]
     [OrderLifetimeConflict]
+    [ProducesResponseType<OrderHistoryCreateResponse>(StatusCodes.Status201Created)]
     [HttpPost("{orderId:int}/finished"), RequirePermission(OrderPermissions.StatusWrite, IsCritical = true)] public Task<IActionResult> CreateOrderHistoryFinishedStatusAsync(int orderId, [FromHeader(Name = "Idempotency-Key")] string? key, CancellationToken c) => Named(orderId, "Finished", key, c);
     [OrderMutationUnavailable]
     [OrderLifetimeConflict]
+    [ProducesResponseType<OrderHistoryCreateResponse>(StatusCodes.Status201Created)]
     [HttpPost("{orderId:int}/InProgress"), RequirePermission(OrderPermissions.StatusWrite, IsCritical = true)] public Task<IActionResult> CreateOrderHistoryInProgressStatusAsync(int orderId, [FromHeader(Name = "Idempotency-Key")] string? key, CancellationToken c) => Named(orderId, "InProgress", key, c);
     [OrderMutationUnavailable]
     [OrderLifetimeConflict]
+    [ProducesResponseType<OrderHistoryCreateResponse>(StatusCodes.Status201Created)]
     [HttpPost("{orderId:int}/new"), RequirePermission(OrderPermissions.StatusWrite, IsCritical = true)] public Task<IActionResult> CreateOrderHistoryNewStatusAsync(int orderId, [FromHeader(Name = "Idempotency-Key")] string? key, CancellationToken c) => Named(orderId, "New", key, c);
     [OrderMutationUnavailable]
     [OrderLifetimeConflict]
+    [ProducesResponseType<OrderHistoryCreateResponse>(StatusCodes.Status201Created)]
     [HttpPost("{orderId:int}/paid"), RequirePermission(OrderPermissions.StatusWrite, IsCritical = true)] public Task<IActionResult> CreateOrderHistoryPaidStatusAsync(int orderId, [FromHeader(Name = "Idempotency-Key")] string? key, CancellationToken c) => Named(orderId, "Paid", key, c);
     [OrderMutationUnavailable]
     [OrderLifetimeConflict]
+    [ProducesResponseType<OrderHistoryCreateResponse>(StatusCodes.Status201Created)]
     [HttpPost("{orderId:int}/quoted"), RequirePermission(OrderPermissions.StatusWrite, IsCritical = true)] public Task<IActionResult> CreateOrderHistoryQuotedStatusAsync(int orderId, [FromHeader(Name = "Idempotency-Key")] string? key, CancellationToken c) => Named(orderId, "Quoted", key, c);
     [OrderMutationUnavailable]
     [OrderLifetimeConflict]
+    [ProducesResponseType<OrderHistoryCreateResponse>(StatusCodes.Status201Created)]
     [HttpPost("{orderId:int}/rejected"), RequirePermission(OrderPermissions.StatusWrite, IsCritical = true)] public Task<IActionResult> CreateOrderHistoryRejectedStatusAsync(int orderId, [FromHeader(Name = "Idempotency-Key")] string? key, CancellationToken c) => Named(orderId, "Rejected", key, c);
     [OrderMutationUnavailable]
     [OrderLifetimeConflict]
+    [ProducesResponseType<OrderHistoryCreateResponse>(StatusCodes.Status201Created)]
     [HttpPost("{orderId:int}/reopen"), RequirePermission(OrderPermissions.StatusWrite, IsCritical = true)] public Task<IActionResult> CreateOrderHistoryReopenStatusAsync(int orderId, [FromHeader(Name = "Idempotency-Key")] string? key, CancellationToken c) => Named(orderId, "Reopen", key, c);
     [OrderMutationUnavailable]
     [OrderLifetimeConflict]
+    [ProducesResponseType<OrderHistoryCreateResponse>(StatusCodes.Status201Created)]
     [HttpPost("{orderId:int}/reviewed"), RequirePermission(OrderPermissions.StatusWrite, IsCritical = true)] public Task<IActionResult> CreateOrderHistoryReviewedStatusAsync(int orderId, [FromHeader(Name = "Idempotency-Key")] string? key, CancellationToken c) => Named(orderId, "Reviewed", key, c);
     [OrderMutationUnavailable]
     [OrderLifetimeConflict]
+    [ProducesResponseType<OrderHistoryCreateResponse>(StatusCodes.Status201Created)]
     [HttpPost("{orderId:int}/reviewing"), RequirePermission(OrderPermissions.StatusWrite, IsCritical = true)] public Task<IActionResult> CreateOrderHistoryReviewingStatusAsync(int orderId, [FromHeader(Name = "Idempotency-Key")] string? key, CancellationToken c) => Named(orderId, "Reviewing", key, c);
     [OrderMutationUnavailable]
     [OrderLifetimeConflict]
+    [ProducesResponseType<OrderHistoryCreateResponse>(StatusCodes.Status201Created)]
     [HttpPost("{orderId:int}/shipped"), RequirePermission(OrderPermissions.StatusWrite, IsCritical = true)] public Task<IActionResult> CreateOrderHistoryShippedStatusAsync(int orderId, [FromHeader(Name = "Idempotency-Key")] string? key, CancellationToken c) => Named(orderId, "Shipped", key, c);
     [OrderMutationUnavailable]
     [OrderLifetimeConflict]
+    [ProducesResponseType<OrderHistoryCreateResponse>(StatusCodes.Status201Created)]
     [HttpPost("{orderId:int}/{statusId:int}"), RequirePermission(OrderPermissions.StatusWrite, IsCritical = true)]
     public async Task<IActionResult> CreateOrderStatusEntryAsync(int orderId, int statusId, [FromHeader(Name = "Idempotency-Key")] string? key, CancellationToken c)
     {
+        if (orderId == 0 || statusId == 0) return BadRequest();
         try
         {
             var request = new TransitionRequest(orderId, statusId);
             var lookup = await IdempotentRequests.LookupAsync<TransitionRequest, TransitionResponse>(idem, User, "order-status", key, request, c);
             if (lookup.Conflict) return Conflict("Idempotency-Key was already used for a different request.");
             if (lookup.InProgress) return Conflict("An idempotent request with this key is already in progress.");
-            if (lookup.Response is not null) return StatusCode(StatusCodes.Status201Created);
-            UpdateResult result;
+            if (lookup.Response is not null) return CreatedHistory(lookup.Response, named: false);
+            OrderTransitionResult result;
             try
             {
-                result = await s.TransitionAsync(orderId, statusId, c);
+                result = await s.TransitionWithResponseAsync(orderId, statusId, c);
             }
             catch
             {
@@ -74,16 +90,18 @@ public sealed class HistoriesController(IOrderService s, IIdempotencyStore idem)
                 throw;
             }
 
-            if (result == UpdateResult.Updated)
+            if (result.Result == UpdateResult.Updated)
             {
-                await IdempotentRequests.StoreAsync(idem, lookup.Context, new TransitionResponse("Updated"), c);
+                var response = TransitionReceipt(result);
+                await IdempotentRequests.StoreAsync(idem, lookup.Context, response, c);
+                return CreatedHistory(response, named: false);
             }
             else
             {
                 await IdempotentRequests.ReleaseAsync(idem, lookup.Context, c);
             }
 
-            return Result(result);
+            return result.StatusMissing ? BadRequest("Status does not exist") : Result(result.Result);
         }
         catch (IdempotencyStoreUnavailableException)
         {
@@ -122,12 +140,12 @@ public sealed class HistoriesController(IOrderService s, IIdempotencyStore idem)
             var lookup = await IdempotentRequests.LookupAsync<NamedTransitionRequest, TransitionResponse>(idem, User, "order-status", key, request, c);
             if (lookup.Conflict) return Conflict("Idempotency-Key was already used for a different request.");
             if (lookup.InProgress) return Conflict("An idempotent request with this key is already in progress.");
-            if (lookup.Response is not null) return StatusCode(StatusCodes.Status201Created);
+            if (lookup.Response is not null) return CreatedHistory(lookup.Response, named: true);
 
-            UpdateResult result;
+            OrderTransitionResult result;
             try
             {
-                result = await s.TransitionAsync(id, name == "InProgress" ? "In Progress" : name, c);
+                result = await s.TransitionWithResponseAsync(id, name == "InProgress" ? "In Progress" : name, c);
             }
             catch
             {
@@ -135,16 +153,18 @@ public sealed class HistoriesController(IOrderService s, IIdempotencyStore idem)
                 throw;
             }
 
-            if (result == UpdateResult.Updated)
+            if (result.Result == UpdateResult.Updated)
             {
-                await IdempotentRequests.StoreAsync(idem, lookup.Context, new TransitionResponse("Updated"), c);
+                var response = TransitionReceipt(result);
+                await IdempotentRequests.StoreAsync(idem, lookup.Context, response, c);
+                return CreatedHistory(response, named: true);
             }
             else
             {
                 await IdempotentRequests.ReleaseAsync(idem, lookup.Context, c);
             }
 
-            return Result(result);
+            return Result(result.Result);
         }
         catch (IdempotencyStoreUnavailableException)
         {
@@ -155,5 +175,16 @@ public sealed class HistoriesController(IOrderService s, IIdempotencyStore idem)
     private IActionResult Result(UpdateResult r) => r switch { UpdateResult.Updated => StatusCode(StatusCodes.Status201Created), UpdateResult.InvalidTransition => Conflict("Order status transition is not permitted."), UpdateResult.Conflict => Conflict("Concurrent status transition detected."), _ => NotFound() };
     private sealed record TransitionRequest(int OrderId, int StatusId);
     private sealed record NamedTransitionRequest(int OrderId, string StatusName);
-    private sealed record TransitionResponse(string Result);
+    private static TransitionResponse TransitionReceipt(OrderTransitionResult result) => new("Updated",
+        OrderHistoryCreateResponse.From(result.History ?? throw new InvalidOperationException("A successful transition must provide its event snapshot.")));
+
+    private IActionResult CreatedHistory(TransitionResponse response, bool named)
+    {
+        // Existing cached acknowledgements predate response snapshots. Replay their original
+        // bare201 without repeating the mutation or fabricating a graph from later database state.
+        if (response.History is null) return StatusCode(StatusCodes.Status201Created);
+        return CreatedAtRoute("GetHistory", new { orderId = named ? response.History.Id : response.History.OrderId }, response.History);
+    }
+
+    private sealed record TransitionResponse(string Result, OrderHistoryCreateResponse? History = null);
 }
