@@ -55,16 +55,16 @@ public sealed class OrdersController(IOrderService s, IIdempotencyStore idem) : 
     /// <returns>The order snapshot.</returns>
     /// <response code="200">The owned order snapshot.</response>
     /// <response code="404">The order does not exist.</response>
-    [ProducesResponseType<OrderResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<OrderReadResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [OrderLifetimeConflict]
-    [HttpGet("{id:int}", Name = "GetOrder"), RequirePermission(OrderPermissions.Read, ResourcePathTemplate = "/orders/{id}")] public async Task<ActionResult<OrderResponse>> GetOrderAsync(int id, CancellationToken c) { var v = await s.GetOrderAsync(id, c); return v is null ? NotFound() : v; }
+    [HttpGet("{id:int}", Name = "GetOrder"), RequirePermission(OrderPermissions.Read, ResourcePathTemplate = "/orders/{id}")] public async Task<ActionResult<OrderReadResponse>> GetOrderAsync(int id, CancellationToken c) { var v = await s.GetOrderAsync(id, c); return v is null ? NotFound() : OrderReadResponse.From(v); }
     [OrderLifetimeConflict]
-    [HttpGet("pending"), RequirePermission(OrderPermissions.Read)] public async Task<ActionResult<PaginatedResponse<OrderResponse>>> GetPaginatedPendingOrderAsync([FromQuery] OrderSortType? sort, [FromQuery] string? search, [FromQuery] int? index, [FromQuery] int? size, CancellationToken c) { var v = await s.GetOrdersAsync(null, true, sort, search, index ?? 1, size, c); return v is null ? NotFound() : v; }
+    [HttpGet("pending"), RequirePermission(OrderPermissions.Read)] public async Task<ActionResult<OrderPageReadResponse>> GetPaginatedPendingOrderAsync([FromQuery] OrderSortType? sort, [FromQuery] string? search, [FromQuery] int? index, [FromQuery] int? size, CancellationToken c) { var v = await s.GetOrdersAsync(null, true, sort, search, index ?? 1, size, c); return v is null ? NotFound() : OrderPageReadResponse.From(v); }
     [OrderLifetimeConflict]
-    [HttpGet, RequirePermission(OrderPermissions.Read)] public async Task<ActionResult<PaginatedResponse<OrderResponse>>> GetPaginatedOrderAsync([FromQuery] OrderSortType? sort, [FromQuery] string? search, [FromQuery] int? index, [FromQuery] int? size, CancellationToken c) { var v = await s.GetOrdersAsync(null, false, sort, search, index ?? 1, size, c); return v is null ? NotFound() : v; }
+    [HttpGet, RequirePermission(OrderPermissions.Read)] public async Task<ActionResult<OrderPageReadResponse>> GetPaginatedOrderAsync([FromQuery] OrderSortType? sort, [FromQuery] string? search, [FromQuery] int? index, [FromQuery] int? size, CancellationToken c) { var v = await s.GetOrdersAsync(null, false, sort, search, index ?? 1, size, c); return v is null ? NotFound() : OrderPageReadResponse.From(v); }
     [OrderLifetimeConflict]
-    [HttpGet("customers/{customerId:int}"), RequirePermission(OrderPermissions.CustomerRead, ResourcePathTemplate = "/customers/{customerId}/orders")] public async Task<ActionResult<PaginatedResponse<OrderResponse>>> GetCustomerOrdersAsync(int customerId, [FromQuery] OrderSortType? sort, [FromQuery] string? search, [FromQuery] int? index, [FromQuery] int? size, CancellationToken c) { var v = await s.GetOrdersAsync(customerId, false, sort, search, index ?? 1, size, c); return v is null ? NotFound() : v; }
+    [HttpGet("customers/{customerId:int}"), RequirePermission(OrderPermissions.CustomerRead, ResourcePathTemplate = "/customers/{customerId}/orders")] public async Task<ActionResult<OrderPageReadResponse>> GetCustomerOrdersAsync(int customerId, [FromQuery] OrderSortType? sort, [FromQuery] string? search, [FromQuery] int? index, [FromQuery] int? size, CancellationToken c) { var v = await s.GetOrdersAsync(customerId, false, sort, search, index ?? 1, size, c); return v is null ? NotFound() : OrderPageReadResponse.From(v); }
     [OrderLifetimeConflict]
     [HttpGet("customers/{customerId:int}/{id:int}"), RequirePermission(OrderPermissions.CustomerRead, ResourcePathTemplate = "/customers/{customerId}/orders/{id}")] public async Task<ActionResult<CustomerOrderDetails>> GetCustomerOrderAsync(int customerId, int id, CancellationToken c) { var v = await s.GetCustomerOrderAsync(customerId, id, c); return v is null ? NotFound() : v; }
     [OrderMutationUnavailable]

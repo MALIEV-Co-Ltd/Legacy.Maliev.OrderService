@@ -109,8 +109,8 @@ public sealed class OrderOpenApiHttpContractTests(OrderDeletionReadinessFixture 
         Assert.Equal("Writable order fields; computed values and server timestamps are not accepted.", request["description"]?.GetValue<string>());
         var response = Resolve(document, Path(document, "/orders/{id}")["get"]!["responses"]!["200"]!["content"]!["application/json"]!["schema"]!.AsObject());
         var output = response["properties"]!.AsObject();
-        Assert.Equal("An order snapshot with scalar service references and persisted computed values.", response["description"]?.GetValue<string>());
-        foreach (var name in new[] { "Id", "Remaining", "Subtotal", "Turnaround", "CreatedDate", "ModifiedDate" })
+        Assert.Equal("The original order scalar wire representation with unloaded related entities.", response["description"]?.GetValue<string>());
+        foreach (var name in new[] { "id", "remaining", "subtotal", "turnaround", "createdDate", "modifiedDate" })
             Assert.True(output.ContainsKey(name), $"Missing response field {name}.");
         await using var app = await fixture.AppAsync(null);
         int orderId;
@@ -138,11 +138,11 @@ public sealed class OrderOpenApiHttpContractTests(OrderDeletionReadinessFixture 
         Assert.Equal(HttpStatusCode.OK, actual.StatusCode);
         var wire = JsonNode.Parse(await actual.Content.ReadAsStringAsync(),
             new JsonNodeOptions { PropertyNameCaseInsensitive = false })!.AsObject();
-        Assert.Equal(42, wire["CustomerId"]!.GetValue<int>());
-        Assert.Equal(2, wire["Remaining"]!.GetValue<int>());
-        Assert.Equal(37.02m, wire["Subtotal"]!.GetValue<decimal>());
-        Assert.False(wire.ContainsKey("customerId"));
-        Assert.False(wire.ContainsKey("Turnaround"));
+        Assert.Equal(42, wire["customerId"]!.GetValue<int>());
+        Assert.Equal(2, wire["remaining"]!.GetValue<int>());
+        Assert.Equal(37.02m, wire["subtotal"]!.GetValue<decimal>());
+        Assert.False(wire.ContainsKey("CustomerId"));
+        Assert.False(wire.ContainsKey("turnaround"));
         Assert.All(wire, field => Assert.True(output.ContainsKey(field.Key), $"Wire field {field.Key} is absent from the response schema."));
         var metadata = Resolve(document, Path(document, "/orders/files/{id}")["put"]!["requestBody"]!["content"]!["application/json"]!["schema"]!.AsObject());
         Assert.Equal("Bucket and object metadata for an owned order; no object upload is performed.", metadata["description"]?.GetValue<string>());
