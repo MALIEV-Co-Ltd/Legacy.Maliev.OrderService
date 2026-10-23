@@ -11,6 +11,7 @@ namespace Legacy.Maliev.OrderService.Api.Controllers;
 [ApiController, Route("[controller]"), Authorize]
 public sealed class OrdersController(IOrderService s, IIdempotencyStore idem) : ControllerBase
 {
+    [ProducesResponseType<OrderReadResponse>(StatusCodes.Status201Created)]
     [HttpPost, RequirePermission(OrderPermissions.Create, IsCritical = true)]
     public async Task<IActionResult> CreateOrderAsync(UpsertOrderRequest i, [FromHeader(Name = "Idempotency-Key")] string? key, CancellationToken c)
     {
@@ -18,14 +19,14 @@ public sealed class OrdersController(IOrderService s, IIdempotencyStore idem) : 
 
         try
         {
-            var lookup = await IdempotentRequests.LookupAsync<UpsertOrderRequest, OrderResponse>(idem, User, "order", key, i, c);
+            var lookup = await IdempotentRequests.LookupAsync<UpsertOrderRequest, OrderReadResponse>(idem, User, "order", key, i, c);
             if (lookup.Conflict) return Conflict("Idempotency-Key was already used for a different request.");
             if (lookup.InProgress) return Conflict("An idempotent request with this key is already in progress.");
             if (lookup.Response is not null) return CreatedAtRoute("GetOrder", new { id = lookup.Response.Id }, lookup.Response);
-            OrderResponse response;
+            OrderReadResponse response;
             try
             {
-                response = await s.CreateOrderAsync(i, c);
+                response = OrderReadResponse.FromCreated(await s.CreateOrderAsync(i, c));
             }
             catch
             {

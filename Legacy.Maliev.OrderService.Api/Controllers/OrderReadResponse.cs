@@ -33,8 +33,19 @@ public sealed record OrderReadResponse(
     [property: JsonPropertyName("createdDate")] DateTime? CreatedDate,
     [property: JsonPropertyName("modifiedDate")] DateTime? ModifiedDate)
 {
-    // Fresh file creation tracks only the returned file. Reference-loop omission leaves this collection empty.
+    // Unloaded orders and fresh file reference-loop omission both leave this collection empty.
     [JsonPropertyName("orderFile")] public IReadOnlyList<object> OrderFile { get; } = [];
+
+    /// <summary>Uses fresh insert dates only when the repository confirms a new row was created.</summary>
+    public static OrderReadResponse FromCreated(OrderResponse value) => value.SourceCreation is { } source
+        ? From(value) with
+        {
+            PromisedDate = source.PromisedDate,
+            FinishedDate = source.FinishedDate,
+            CreatedDate = source.CreatedDate,
+            ModifiedDate = source.CreatedDate,
+        }
+        : From(value);
 
     public static OrderReadResponse From(OrderResponse value) => new(
         value.Id, value.CustomerId, value.EmployeeId, value.Name, value.Description, value.ProcessId,
