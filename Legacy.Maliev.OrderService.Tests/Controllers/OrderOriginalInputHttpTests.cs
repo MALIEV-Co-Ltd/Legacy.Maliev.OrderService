@@ -311,7 +311,7 @@ public sealed class OrderOriginalInputHttpTests(OrderDeletionReadinessFixture fi
     private static async Task<int> CreatedIdAsync(HttpResponseMessage response, string kind)
     {
         using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        return json.RootElement.GetProperty(kind is "category" or "format" or "process" or "status" ? "id" : "Id").GetInt32();
+        return json.RootElement.GetProperty(kind is "category" or "format" or "process" or "file" or "status" ? "id" : "Id").GetInt32();
     }
     private static async Task AssertStoredAsync(WebApplicationFactory<Program> app, string kind, int id, string expected = "kept")
     {

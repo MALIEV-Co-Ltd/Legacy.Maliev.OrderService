@@ -524,9 +524,9 @@ public sealed class OrderFileLiteralHttpTests(OrderDeletionReadinessFixture fixt
         using var fresh = await reader.GetAsync($"/orders/files/{file.Id}");
         Assert.Equal(HttpStatusCode.OK, fresh.StatusCode);
         using var wire = JsonDocument.Parse(await fresh.Content.ReadAsStringAsync());
-        Assert.Equal(JsonValueKind.String, wire.RootElement.GetProperty("Bucket").ValueKind);
-        Assert.Equal(bucket, wire.RootElement.GetProperty("Bucket").GetString());
-        Assert.Equal(objectName, wire.RootElement.GetProperty("ObjectName").GetString());
+        Assert.Equal(JsonValueKind.String, wire.RootElement.GetProperty("bucket").ValueKind);
+        Assert.Equal(bucket, wire.RootElement.GetProperty("bucket").GetString());
+        Assert.Equal(objectName, wire.RootElement.GetProperty("objectName").GetString());
         Assert.Equal(file, await reader.GetFromJsonAsync<OrderFileResponse>($"/orders/files/{file.Id}"));
         Assert.Contains(file, (await reader.GetFromJsonAsync<OrderFileResponse[]>($"/orders/{file.OrderId}/files"))!);
         await using var scope = app.Services.CreateAsyncScope();
