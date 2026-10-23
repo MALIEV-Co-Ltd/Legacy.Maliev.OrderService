@@ -1,0 +1,18 @@
+#nullable disable
+// Original 5fac CLR body; only the nullable compiler context is adapted.
+namespace Maliev.OrderStatusService.Data.Database.OrderStatusContext
+{
+    using System;
+    using System.Collections.Generic;
+
+    public partial class OrderStatusHistory
+    {
+        public int Id { get; set; }
+        public int OrderId { get; set; }
+        public int OrderStatusId { get; set; }
+        public DateTime? CreatedDate { get; set; }
+        public DateTime? ModifiedDate { get; set; }
+
+        public OrderStatus OrderStatus { get; set; }
+    }
+}

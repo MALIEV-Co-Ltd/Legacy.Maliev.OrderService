@@ -33,4 +33,12 @@ public sealed record OrderStatusReadResponse(
     /// <returns>The original read wire representation.</returns>
     public static OrderStatusReadResponse From(OrderStatusResponse status) =>
         new(status.Id, status.Name, status.Description, status.CreatedDate, status.ModifiedDate);
+
+    /// <summary>Preserves the fresh UTC values returned by the original status creation action.</summary>
+    /// <param name="status">The unchanged internal creation response.</param>
+    /// <returns>The original status POST representation.</returns>
+    public static OrderStatusReadResponse FromCreated(OrderStatusResponse status) =>
+        new(status.Id, status.Name, status.Description,
+            status.CreatedDate is { } created ? DateTime.SpecifyKind(created, DateTimeKind.Utc) : null,
+            status.ModifiedDate is { } modified ? DateTime.SpecifyKind(modified, DateTimeKind.Utc) : null);
 }
