@@ -70,6 +70,7 @@ public sealed class OrderFileMetadataLifecycleHttpTests(OrderDeletionReadinessFi
         using var replay = await deleter.DeleteAsync($"/orders/files/{file.Id}");
         using var missingUpdate = await writer.PutAsJsonAsync($"/orders/files/{file.Id}", new UpsertOrderFileRequest(second, "missing", "missing.step"));
         Assert.Equal(HttpStatusCode.NoContent, deleted.StatusCode);
+        Assert.Empty(await deleted.Content.ReadAsByteArrayAsync());
         Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, replay.StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, missingUpdate.StatusCode);
