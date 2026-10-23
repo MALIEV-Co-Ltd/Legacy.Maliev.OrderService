@@ -208,9 +208,14 @@ public sealed class OrderHistoryPutReadSourceHttpTests(OrderDeletionReadinessFix
         Assert.NotEmpty(rows);
         var timeline = rows.Select((row, index) => new OriginalStatus
         {
-            Id = index + 1, Name = definitions[row.OrderStatusId].Name, Description = definitions[row.OrderStatusId].Description,
-            CreatedDate = row.CreatedDate, ModifiedDate = row.ModifiedDate,
-            OrderStatusHasPossibleStatusOrderStatus = null!, OrderStatusHasPossibleStatusPossibleStatus = null!, OrderStatusHistory = null!,
+            Id = index + 1,
+            Name = definitions[row.OrderStatusId].Name,
+            Description = definitions[row.OrderStatusId].Description,
+            CreatedDate = row.CreatedDate,
+            ModifiedDate = row.ModifiedDate,
+            OrderStatusHasPossibleStatusOrderStatus = null!,
+            OrderStatusHasPossibleStatusPossibleStatus = null!,
+            OrderStatusHistory = null!,
         }).ToArray();
         using var historyResponse = await reader.GetAsync($"/orderstatuses/Histories/{owner}");
         Assert.Equal(HttpStatusCode.OK, historyResponse.StatusCode);
