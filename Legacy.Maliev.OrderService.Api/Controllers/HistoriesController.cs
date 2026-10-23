@@ -96,7 +96,15 @@ public sealed class HistoriesController(IOrderService s, IIdempotencyStore idem)
     [OrderLifetimeConflict]
     [HttpGet("{orderId:int}/latest", Name = "GetLatest"), RequirePermission(OrderPermissions.StatusRead)] public async Task<ActionResult<OrderStatusResponse>> GetLatestAsync(int orderId, CancellationToken c) { var v = await s.GetLatestStatusAsync(orderId, c); return v is null ? NotFound() : v; }
     [OrderLifetimeConflict]
-    [HttpGet("{orderId:int}", Name = "GetHistory"), RequirePermission(OrderPermissions.StatusRead)] public async Task<ActionResult<IReadOnlyList<OrderStatusHistoryResponse>>> GetOrderHistoryAsync(int orderId, CancellationToken c) { var v = await s.GetHistoryAsync(orderId, c); return v.Count == 0 ? NotFound() : Ok(v); }
+    [HttpGet("{orderId:int}", Name = "GetHistory"), RequirePermission(OrderPermissions.StatusRead)]
+    public async Task<ActionResult<IReadOnlyList<OrderHistoryStatusResponse>>> GetOrderHistoryAsync(int orderId, CancellationToken c)
+    {
+        var history = await s.GetHistoryAsync(orderId, c);
+        if (history.Count == 0) return NotFound();
+        // The source timeline uses null-first event dates and display ordinals, not stored history IDs.
+        return Ok(history.OrderBy(row => row.CreatedDate).Select((row, index) =>
+            new OrderHistoryStatusResponse(index + 1, row.Name, row.Description, row.CreatedDate, row.ModifiedDate)).ToArray());
+    }
     [OrderMutationUnavailable]
     [OrderLifetimeConflict]
     [HttpPut("{historyId:int}"), RequirePermission(OrderPermissions.StatusWrite, IsCritical = true)]
