@@ -4,6 +4,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Legacy.Maliev.OrderService.Api.Authorization;
+using Legacy.Maliev.OrderService.Application.Interfaces;
 using Legacy.Maliev.OrderService.Application.Models;
 using Legacy.Maliev.OrderService.Data;
 using Legacy.Maliev.OrderService.Domain;
@@ -109,6 +110,14 @@ public sealed class OrderFileResponseSourceHttpTests(OrderDeletionReadinessFixtu
         AssertSource(await detail.Content.ReadAsStringAsync(), Original(persisted));
         Assert.Equal(value, await detail.Content.ReadFromJsonAsync<OrderFileResponse>());
         Assert.Equal(beforeParent, JsonSerializer.Serialize(await db.Orders.AsNoTracking().SingleAsync()));
+        var service = scope.ServiceProvider.GetRequiredService<IOrderService>();
+        var duplicate = await service.CreateFileAsync(parent.Id, "metadata", "part.step", default);
+        var reread = await service.GetFileAsync(value.Id, default);
+        Assert.NotNull(duplicate);
+        Assert.NotNull(reread);
+        Assert.Equal(reread, duplicate);
+        Assert.Equal(reread.GetHashCode(), duplicate.GetHashCode());
+        Assert.Equal(JsonSerializer.Serialize(reread), JsonSerializer.Serialize(duplicate));
         Assert.Equal(2, await db.Files.CountAsync());
         Assert.Equal("existing.step", (await db.Files.AsNoTracking().SingleAsync(item => item.Id == oldFile.Id)).ObjectName);
     }

@@ -44,19 +44,21 @@ public sealed partial class OrderRepository
     public Task<OrderFileResponse?> CreateFileAsync(int orderId, string bucket, string objectName, CancellationToken c) =>
         WithLifetimeAsync<OrderFileResponse?>([orderId], async (o, _, _) =>
         {
-            if (await IsDeletedLifetimeAsync(o, orderId, c) || !await o.Orders.AnyAsync(x => x.Id == orderId, c)) return null;
+            if (await IsDeletedLifetimeAsync(o, orderId, c)) return null;
+            var parent = await ProjectOrders(o.Orders.AsNoTracking().Where(x => x.Id == orderId)).SingleOrDefaultAsync(c);
+            if (parent is null) return null;
             OrderFileSourceConstraints.ValidateBucket(bucket);
             var literalBucket = bucket;
             var literalObjectName = objectName;
             var lockIdentity = $"order-file\n{orderId}\n{literalBucket}\n{literalObjectName}";
             await o.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtextextended({lockIdentity}, 0))", c);
             var existing = await ProjectFiles(o.Files.AsNoTracking().Where(x => x.OrderId == orderId && x.Bucket == literalBucket && x.ObjectName == literalObjectName).OrderBy(x => x.Id)).FirstOrDefaultAsync(c);
-            if (existing is not null) return existing;
+            if (existing is not null) return existing with { SourceCreatedOrder = parent };
             var now = Now();
             var entity = new OrderFile { OrderId = orderId, Bucket = literalBucket, ObjectName = literalObjectName, CreatedDate = now, ModifiedDate = now };
             o.Add(entity);
             await o.SaveChangesAsync(c);
-            return File(entity);
+            return File(entity) with { SourceCreatedOrder = parent, IsFreshSourceCreation = true };
         }, c, false);
 
     public async Task<bool> DeleteFileAsync(int id, CancellationToken c)
