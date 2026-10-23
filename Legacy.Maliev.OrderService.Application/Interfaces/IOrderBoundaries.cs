@@ -12,6 +12,8 @@ public interface IOrderService
     Task<OrderStatusResponse> CreateStatusAsync(UpsertOrderStatusRequest r, CancellationToken c); Task<bool> DeleteStatusAsync(int id, CancellationToken c); Task<IReadOnlyList<OrderStatusResponse>> GetStatusesAsync(CancellationToken c); Task<OrderStatusResponse?> GetStatusAsync(int id, CancellationToken c); Task<OrderStatusResponse?> GetStatusAsync(string name, CancellationToken c); Task<bool> UpdateStatusAsync(int id, UpsertOrderStatusRequest r, CancellationToken c); Task<IReadOnlyList<OrderStatusResponse>> GetAvailableStatusesAsync(int currentStatusId, CancellationToken c);
     Task<UpdateResult> TransitionAsync(int orderId, int statusId, CancellationToken c); Task<UpdateResult> TransitionAsync(int orderId, string statusName, CancellationToken c); Task<bool> DeleteHistoryAsync(int id, CancellationToken c); Task<OrderStatusResponse?> GetLatestStatusAsync(int orderId, CancellationToken c); Task<IReadOnlyList<OrderStatusHistoryResponse>> GetHistoryAsync(int orderId, CancellationToken c); Task<UpdateResult> UpdateHistoryAsync(int id, UpsertOrderStatusHistoryRequest r, DateTimeOffset? expected, CancellationToken c);
     Task<OrderLatestStatusReadResult?> GetLatestStatusReadAsync(int orderId, CancellationToken c);
+    Task<OrderTransitionResult> TransitionWithResponseAsync(int orderId, int statusId, CancellationToken c);
+    Task<OrderTransitionResult> TransitionWithResponseAsync(int orderId, string statusName, CancellationToken c);
 }
 public interface IOrderCache { Task<T?> GetAsync<T>(string k, CancellationToken c) where T : class; Task SetAsync<T>(string k, T v, TimeSpan t, CancellationToken c) where T : class; Task RemoveAsync(string k, CancellationToken c); }
 public interface IIdempotencyStore

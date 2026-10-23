@@ -55,21 +55,51 @@ public sealed class OrderControllerContractTests
         Assert.Equal(typeof(string), Nullable.GetUnderlyingType(key.ParameterType) ?? key.ParameterType);
     }
 
+    private static OrderTransitionResult Transition() => new(UpdateResult.Updated,
+        new OrderHistoryCreation(11, 42, 7, null, null, new OrderStatusResponse(7, "Accepted", null, null, null)));
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task StatusIdempotency_PreSnapshotReceiptReplaysItsOriginalBareAcknowledgement(bool named)
+    {
+        var service = new Mock<IOrderService>(MockBehavior.Strict);
+        var controller = WithPrincipal(new HistoriesController(service.Object, new LegacyStatusReceiptStore()), "employee-a");
+        var replay = named
+            ? await controller.CreateOrderHistoryAcceptedStatusAsync(42, "old-receipt", default)
+            : await controller.CreateOrderStatusEntryAsync(42, 7, "old-receipt", default);
+        Assert.Equal(StatusCodes.Status201Created, Assert.IsType<StatusCodeResult>(replay).StatusCode);
+        service.VerifyNoOtherCalls();
+    }
+
+    private sealed class LegacyStatusReceiptStore : IIdempotencyStore
+    {
+        public Task<IdempotencyAcquireResult<T>> AcquireAsync<T>(string scope, string key, string requestFingerprint, CancellationToken cancellationToken) where T : class
+        {
+            var response = System.Text.Json.JsonSerializer.Deserialize<T>("{\"result\":\"Updated\"}",
+                new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web));
+            Assert.NotNull(response);
+            return Task.FromResult(new IdempotencyAcquireResult<T>(IdempotencyAcquireState.Replay, null, response));
+        }
+        public Task CompleteAsync<T>(string scope, string key, string requestFingerprint, string reservationId, T response, CancellationToken cancellationToken) where T : class => throw new InvalidOperationException("Replay must not replace a receipt.");
+        public Task ReleaseAsync(string scope, string key, string reservationId, CancellationToken cancellationToken) => throw new InvalidOperationException("Replay must not release a receipt.");
+    }
+
     [Fact]
     public async Task QuotationDecisionShortcut_ExactReplayDoesNotRepeatTransition()
     {
         var service = new Mock<IOrderService>();
-        service.Setup(value => value.TransitionAsync(42, "Accepted", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(UpdateResult.Updated);
+        service.Setup(value => value.TransitionWithResponseAsync(42, "Accepted", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Transition());
         var controller = WithPrincipal(new HistoriesController(service.Object, new MemoryIdempotencyStore()), "quotation-service");
 
         var first = await controller.CreateOrderHistoryAcceptedStatusAsync(42, "quotation-7-order-42-accepted", default);
         var replay = await controller.CreateOrderHistoryAcceptedStatusAsync(42, "quotation-7-order-42-accepted", default);
 
-        Assert.Equal(StatusCodes.Status201Created, Assert.IsType<StatusCodeResult>(first).StatusCode);
-        Assert.Equal(StatusCodes.Status201Created, Assert.IsType<StatusCodeResult>(replay).StatusCode);
+        Assert.Equal(StatusCodes.Status201Created, Assert.IsType<CreatedAtRouteResult>(first).StatusCode);
+        Assert.Equal(StatusCodes.Status201Created, Assert.IsType<CreatedAtRouteResult>(replay).StatusCode);
         service.Verify(
-            value => value.TransitionAsync(42, "Accepted", It.IsAny<CancellationToken>()),
+            value => value.TransitionWithResponseAsync(42, "Accepted", It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
@@ -77,17 +107,17 @@ public sealed class OrderControllerContractTests
     public async Task QuotationDecisionShortcut_RejectsReusedKeyForDifferentDecision()
     {
         var service = new Mock<IOrderService>();
-        service.Setup(value => value.TransitionAsync(42, "Accepted", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(UpdateResult.Updated);
+        service.Setup(value => value.TransitionWithResponseAsync(42, "Accepted", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Transition());
         var controller = WithPrincipal(new HistoriesController(service.Object, new MemoryIdempotencyStore()), "quotation-service");
 
         var first = await controller.CreateOrderHistoryAcceptedStatusAsync(42, "shared-key", default);
         var conflict = await controller.CreateOrderHistoryDeclinedStatusAsync(42, "shared-key", default);
 
-        Assert.Equal(StatusCodes.Status201Created, Assert.IsType<StatusCodeResult>(first).StatusCode);
+        Assert.Equal(StatusCodes.Status201Created, Assert.IsType<CreatedAtRouteResult>(first).StatusCode);
         Assert.IsType<ConflictObjectResult>(conflict);
         service.Verify(
-            value => value.TransitionAsync(42, "Declined", It.IsAny<CancellationToken>()),
+            value => value.TransitionWithResponseAsync(42, "Declined", It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
@@ -95,9 +125,9 @@ public sealed class OrderControllerContractTests
     public async Task StatusIdempotency_IsCachedOnlyAfterRepositoryConvergenceSucceeds()
     {
         var service = new Mock<IOrderService>();
-        service.SetupSequence(value => value.TransitionAsync(42, 7, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(UpdateResult.Conflict)
-            .ReturnsAsync(UpdateResult.Updated);
+        service.SetupSequence(value => value.TransitionWithResponseAsync(42, 7, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new OrderTransitionResult(UpdateResult.Conflict))
+            .ReturnsAsync(Transition());
         var idempotency = new RecordingIdempotencyStore();
         var controller = WithPrincipal(new HistoriesController(service.Object, idempotency), "employee-a");
 
@@ -106,7 +136,7 @@ public sealed class OrderControllerContractTests
         Assert.Equal(0, idempotency.SetCount);
 
         var retried = await controller.CreateOrderStatusEntryAsync(42, 7, "accepted-key", default);
-        Assert.Equal(StatusCodes.Status201Created, Assert.IsType<StatusCodeResult>(retried).StatusCode);
+        Assert.Equal(StatusCodes.Status201Created, Assert.IsType<CreatedAtRouteResult>(retried).StatusCode);
         Assert.Equal(1, idempotency.SetCount);
     }
 
@@ -155,17 +185,17 @@ public sealed class OrderControllerContractTests
     public async Task StatusIdempotency_RejectsSameKeyForDifferentOrderAndStatus()
     {
         var service = new Mock<IOrderService>();
-        service.Setup(value => value.TransitionAsync(42, 7, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(UpdateResult.Updated);
+        service.Setup(value => value.TransitionWithResponseAsync(42, 7, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Transition());
         var controller = WithPrincipal(new HistoriesController(service.Object, new MemoryIdempotencyStore()), "employee-a");
 
         var created = await controller.CreateOrderStatusEntryAsync(42, 7, "shared-key", default);
         var conflict = await controller.CreateOrderStatusEntryAsync(43, 8, "shared-key", default);
 
-        Assert.Equal(StatusCodes.Status201Created, Assert.IsType<StatusCodeResult>(created).StatusCode);
+        Assert.Equal(StatusCodes.Status201Created, Assert.IsType<CreatedAtRouteResult>(created).StatusCode);
         Assert.IsType<ConflictObjectResult>(conflict);
         service.Verify(
-            value => value.TransitionAsync(43, 8, It.IsAny<CancellationToken>()),
+            value => value.TransitionWithResponseAsync(43, 8, It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
@@ -192,17 +222,17 @@ public sealed class OrderControllerContractTests
     public async Task StatusIdempotency_ExactReplayDoesNotRepeatTransition()
     {
         var service = new Mock<IOrderService>();
-        service.Setup(value => value.TransitionAsync(42, 7, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(UpdateResult.Updated);
+        service.Setup(value => value.TransitionWithResponseAsync(42, 7, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Transition());
         var controller = WithPrincipal(new HistoriesController(service.Object, new MemoryIdempotencyStore()), "employee-a");
 
         var first = await controller.CreateOrderStatusEntryAsync(42, 7, "replay-key", default);
         var replay = await controller.CreateOrderStatusEntryAsync(42, 7, "replay-key", default);
 
-        Assert.Equal(StatusCodes.Status201Created, Assert.IsType<StatusCodeResult>(first).StatusCode);
-        Assert.Equal(StatusCodes.Status201Created, Assert.IsType<StatusCodeResult>(replay).StatusCode);
+        Assert.Equal(StatusCodes.Status201Created, Assert.IsType<CreatedAtRouteResult>(first).StatusCode);
+        Assert.Equal(StatusCodes.Status201Created, Assert.IsType<CreatedAtRouteResult>(replay).StatusCode);
         service.Verify(
-            value => value.TransitionAsync(42, 7, It.IsAny<CancellationToken>()),
+            value => value.TransitionWithResponseAsync(42, 7, It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
