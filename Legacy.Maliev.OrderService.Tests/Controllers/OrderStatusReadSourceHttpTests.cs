@@ -38,7 +38,7 @@ public sealed class OrderStatusReadSourceHttpTests(OrderDeletionReadinessFixture
         await using var app = await fixture.AppAsync(null);
         await using var scope = app.Services.CreateAsyncScope();
         var statuses = scope.ServiceProvider.GetRequiredService<OrderStatusDbContext>();
-        var seed = await SeedAsync(statuses, kind == "name", nullableFields);
+        var seed = await SeedAsync(statuses, nullableFields);
         var service = scope.ServiceProvider.GetRequiredService<IOrderService>();
         var internalBefore = await service.GetStatusesAsync(default);
         var transitionsBefore = await TransitionsAsync(statuses);
@@ -134,7 +134,7 @@ public sealed class OrderStatusReadSourceHttpTests(OrderDeletionReadinessFixture
     {
         await using var app = await fixture.AppAsync(null);
         await using var seedScope = app.Services.CreateAsyncScope();
-        var seed = await SeedAsync(seedScope.ServiceProvider.GetRequiredService<OrderStatusDbContext>(), true, false);
+        var seed = await SeedAsync(seedScope.ServiceProvider.GetRequiredService<OrderStatusDbContext>(), false);
         await using var queryScope = app.Services.CreateAsyncScope();
         var statuses = queryScope.ServiceProvider.GetRequiredService<OrderStatusDbContext>();
         // The original controller includes an untracked transition graph, then returns FindAsync results.
@@ -213,12 +213,12 @@ public sealed class OrderStatusReadSourceHttpTests(OrderDeletionReadinessFixture
         ModifiedDate = status.ModifiedDate,
     };
 
-    private static async Task<Seed> SeedAsync(OrderStatusDbContext statuses, bool nameRequired, bool nullableFields)
+    private static async Task<Seed> SeedAsync(OrderStatusDbContext statuses, bool nullableFields)
     {
         var current = new OrderStatus { Name = "Source current", CreatedDate = new DateTime(2011, 1, 2), ModifiedDate = new DateTime(2012, 1, 2) };
         var target = new OrderStatus
         {
-            Name = nameRequired || !nullableFields ? "Source target" : null,
+            Name = "Source target",
             Description = nullableFields ? null : "Retained source description",
             CreatedDate = new DateTime(2018, 1, 2),
             ModifiedDate = new DateTime(2019, 1, 2),
