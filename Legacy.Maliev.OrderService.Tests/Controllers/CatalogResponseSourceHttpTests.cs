@@ -81,8 +81,10 @@ public sealed class CatalogResponseSourceHttpTests(OrderDeletionReadinessFixture
         var name = nullName ? null : "  ไทย / created  ";
         var input = new JsonObject
         {
-            ["Id"] = 99999999, ["Name"] = name,
-            ["CreatedDate"] = "2000-01-01T00:00:00", ["ModifiedDate"] = "2000-01-02T00:00:00",
+            ["Id"] = 99999999,
+            ["Name"] = name,
+            ["CreatedDate"] = "2000-01-01T00:00:00",
+            ["ModifiedDate"] = "2000-01-02T00:00:00",
         };
         if (kind == "category")
             input["Process"] = new JsonArray(new JsonObject { ["Id"] = 77777, ["CategoryId"] = parent.Id, ["Name"] = "ignored", ["Order"] = new JsonArray(new JsonObject()) });
@@ -114,8 +116,13 @@ public sealed class CatalogResponseSourceHttpTests(OrderDeletionReadinessFixture
             Assert.Equal(now, stored.CreatedDate);
             Assert.Equal(now, stored.ModifiedDate);
             locationOriginal = Original(stored);
-            original = new OriginalCategory { Id = stored.Id, Name = stored.Name,
-                CreatedDate = clock.GetUtcNow().UtcDateTime, ModifiedDate = clock.GetUtcNow().UtcDateTime };
+            original = new OriginalCategory
+            {
+                Id = stored.Id,
+                Name = stored.Name,
+                CreatedDate = clock.GetUtcNow().UtcDateTime,
+                ModifiedDate = clock.GetUtcNow().UtcDateTime
+            };
             Assert.Equal(before, await SnapshotAsync(database, excludedCategory: id));
         }
         else
@@ -128,8 +135,14 @@ public sealed class CatalogResponseSourceHttpTests(OrderDeletionReadinessFixture
             Assert.Null(stored.Category);
             Assert.Empty(stored.Orders);
             locationOriginal = new OriginalProcess { Id = stored.Id, CategoryId = stored.CategoryId, Name = stored.Name, CreatedDate = stored.CreatedDate, ModifiedDate = stored.ModifiedDate };
-            original = new OriginalProcess { Id = stored.Id, CategoryId = stored.CategoryId, Name = stored.Name,
-                CreatedDate = clock.GetUtcNow().UtcDateTime, ModifiedDate = clock.GetUtcNow().UtcDateTime };
+            original = new OriginalProcess
+            {
+                Id = stored.Id,
+                CategoryId = stored.CategoryId,
+                Name = stored.Name,
+                CreatedDate = clock.GetUtcNow().UtcDateTime,
+                ModifiedDate = clock.GetUtcNow().UtcDateTime
+            };
             Assert.Equal(before, await SnapshotAsync(database, excludedProcess: id));
         }
         AssertSourceWire(body, original);
@@ -226,6 +239,7 @@ public sealed class CatalogResponseSourceHttpTests(OrderDeletionReadinessFixture
             ? processType.EnumerateArray().Select(value => value.GetString()).ToArray() : [processType.GetString()]);
         var required = category.TryGetProperty("required", out var requiredArray)
             ? requiredArray.EnumerateArray().Select(value => value.GetString()).ToArray() : [];
+        Assert.Contains("id", required);
         foreach (var optional in new[] { "name", "createdDate", "modifiedDate" }) Assert.DoesNotContain(optional, required);
         AssertResponseSchema(root, "/orders/Categories/{id}", "get", "200", "CategoryReadResponse");
         AssertResponseSchema(root, "/orders/Categories", "post", "201", "CategoryReadResponse");
@@ -262,7 +276,10 @@ public sealed class CatalogResponseSourceHttpTests(OrderDeletionReadinessFixture
 
     private static OriginalCategory Original(Category row) => new()
     {
-        Id = row.Id, Name = row.Name, CreatedDate = row.CreatedDate, ModifiedDate = row.ModifiedDate,
+        Id = row.Id,
+        Name = row.Name,
+        CreatedDate = row.CreatedDate,
+        ModifiedDate = row.ModifiedDate,
     };
 
     private static async Task<Category> SeedAsync(OrderDbContext database)

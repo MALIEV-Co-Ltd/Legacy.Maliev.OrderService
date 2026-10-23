@@ -9,7 +9,7 @@ namespace Legacy.Maliev.OrderService.Api.Controllers;
 [ApiController, Route("orders/[controller]"), Authorize]
 public sealed class ProcessesController(IOrderService s) : ControllerBase
 {
-    [HttpPost, RequirePermission(OrderPermissions.CatalogWrite)] public async Task<IActionResult> CreateProcessAsync(UpsertProcessRequest i, CancellationToken c) { if (i is null) return BadRequest(); var v = await s.CreateProcessAsync(i, c); return CreatedAtRoute("GetProcess", new { id = v.Id }, v); }
+    [HttpPost, RequirePermission(OrderPermissions.CatalogWrite), ProducesResponseType<ProcessReadResponse>(StatusCodes.Status201Created)] public async Task<IActionResult> CreateProcessAsync(UpsertProcessRequest i, CancellationToken c) { if (i is null) return BadRequest(); var v = await s.CreateProcessAsync(i, c); return CreatedAtRoute("GetProcess", new { id = v.Id }, ProcessReadResponse.FromCreated(v)); }
     [HttpDelete("{id:int}"), RequirePermission(OrderPermissions.CatalogDelete)] public async Task<IActionResult> DeleteProcessAsync(int id, CancellationToken c) => await s.DeleteProcessAsync(id, c) ? NoContent() : NotFound();
     [HttpGet("additive"), RequirePermission(OrderPermissions.CatalogRead)] public Task<ActionResult<IReadOnlyList<ProcessReadResponse>>> GetAdditiveProcessAsync(CancellationToken c) => List("Additive", c);
     [HttpGet, RequirePermission(OrderPermissions.CatalogRead)] public Task<ActionResult<IReadOnlyList<ProcessReadResponse>>> GetAllProcessesAsync(CancellationToken c) => List(null, c);

@@ -183,7 +183,7 @@ public sealed class ProcessReadSourceHttpTests(OrderDeletionReadinessFixture fix
             foreach (var name in optional) Assert.DoesNotContain(name, required);
             Assert.Contains("id", required);
         }
-        Assert.True(schemas.GetProperty("ProcessResponse").GetProperty("properties").TryGetProperty("CategoryId", out _));
+        Assert.True(schemas.GetProperty("ProcessReadResponse").GetProperty("properties").TryGetProperty("categoryId", out _));
         Assert.True(schemas.GetProperty("UpsertProcessRequest").GetProperty("properties").TryGetProperty("Name", out _));
         using var internalWire = JsonDocument.Parse(JsonSerializer.Serialize(new ProcessResponse(1, 2, "Internal", null, null)));
         Assert.True(internalWire.RootElement.TryGetProperty("CategoryId", out _));
