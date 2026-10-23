@@ -2,6 +2,7 @@ using System.ComponentModel.DataAnnotations;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Security.Claims;
 using System.Text.Json;
 using Legacy.Maliev.OrderService.Api.Authorization;
 using Legacy.Maliev.OrderService.Api.Controllers;
@@ -9,6 +10,7 @@ using Legacy.Maliev.OrderService.Application.Interfaces;
 using Legacy.Maliev.OrderService.Application.Models;
 using Legacy.Maliev.OrderService.Data;
 using Legacy.Maliev.OrderService.Domain;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
@@ -16,14 +18,83 @@ using Microsoft.Extensions.DependencyInjection;
 using Moq;
 using Npgsql;
 using NpgsqlTypes;
+using Xunit.Abstractions;
 
 namespace Legacy.Maliev.OrderService.Tests.Controllers;
 
-public sealed class OrderTrackingBoundarySourceTests(OrderDeletionReadinessFixture fixture)
+public sealed class OrderTrackingBoundarySourceTests(OrderDeletionReadinessFixture fixture, ITestOutputHelper output)
     : IClassFixture<OrderDeletionReadinessFixture>
 {
     private static int nextIdentity = 7_000_000;
     private static readonly JsonSerializerOptions WebJson = new(JsonSerializerDefaults.Web);
+
+    [Theory]
+    [InlineData("http", false)]
+    [InlineData("http", true)]
+    [InlineData("repository", false)]
+    [InlineData("repository", true)]
+    [InlineData("sql", false)]
+    [InlineData("sql", true)]
+    public async Task CurrentVarcharExcessAsciiTrailingSpaceOutcomeIsRecorded(string boundary, bool update)
+    {
+        // This captures current Legacy behavior, not an original SQL Server oracle.
+        await using var app = await fixture.AppAsync(null);
+        using var lifetime = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        var token = lifetime.Token;
+        var (process, existing) = await SeedAsync(app, token);
+        var input = new string('A', 250) + " ";
+        var expectedStored = new string('A', 250);
+        Assert.Equal(251, input.Length);
+        var otherRows = await SnapshotAsync(app, token, update ? [existing] : []);
+        var otherFields = await OtherTargetFieldsAsync(app, existing, boundary != "sql", token);
+        await using var scope = app.Services.CreateAsyncScope();
+        var service = scope.ServiceProvider.GetRequiredService<IOrderService>();
+        var id = existing;
+        string result;
+        if (boundary == "http")
+        {
+            using var writer = Client(app, update ? OrderPermissions.Update : OrderPermissions.Create);
+            using var response = await SendAsync(writer, update, existing, Request(process, input), token);
+            result = ((int)response.StatusCode).ToString(System.Globalization.CultureInfo.InvariantCulture);
+            output.WriteLine($"Current Legacy HTTP inputUtf16=251 status={result}");
+            Assert.Equal(update ? HttpStatusCode.NoContent : HttpStatusCode.Created, response.StatusCode);
+            var raw = await response.Content.ReadAsStringAsync(token);
+            if (update) Assert.Empty(raw);
+            else
+            {
+                AssertWireTracking(raw, expectedStored);
+                id = JsonSerializer.Deserialize<OrderResponse>(raw, WebJson)!.Id;
+            }
+        }
+        else if (boundary == "repository")
+        {
+            if (update)
+            {
+                var changed = await service.UpdateOrderAsync(existing, Request(process, input), null, token);
+                result = changed.ToString();
+                Assert.Equal(UpdateResult.Updated, changed);
+            }
+            else
+            {
+                var created = await service.CreateOrderAsync(Request(process, input), token);
+                id = created.Id;
+                result = "Created";
+                Assert.Equal(expectedStored, created.TrackingNumber);
+            }
+        }
+        else
+        {
+            Assert.Equal("sql", boundary);
+            id = await WritePhysicalAsync(scope.ServiceProvider.GetRequiredService<OrderDbContext>(), update, existing, process, input, token);
+            result = "Written";
+        }
+        var stored = await scope.ServiceProvider.GetRequiredService<OrderDbContext>().Orders.AsNoTracking()
+            .SingleAsync(value => value.Id == id, token);
+        output.WriteLine($"Current Legacy boundary={boundary} update={update} result={result} inputUtf16={input.Length} storedUtf16={stored.TrackingNumber?.Length}");
+        Assert.Equal(expectedStored, stored.TrackingNumber);
+        Assert.Equal(otherRows, await SnapshotAsync(app, token, [id]));
+        if (update) Assert.Equal(otherFields, await OtherTargetFieldsAsync(app, existing, boundary != "sql", token));
+    }
 
     [Theory]
     [InlineData(false)]
@@ -208,7 +279,16 @@ public sealed class OrderTrackingBoundarySourceTests(OrderDeletionReadinessFixtu
     {
         var service = new Mock<IOrderService>(MockBehavior.Strict);
         var cache = new Mock<IIdempotencyStore>(MockBehavior.Strict);
-        var controller = new OrdersController(service.Object, cache.Object);
+        var controller = new OrdersController(service.Object, cache.Object)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = new DefaultHttpContext
+                {
+                    User = new ClaimsPrincipal(new ClaimsIdentity([new Claim("sub", "tracking-control")], "test")),
+                },
+            },
+        };
         foreach (var overflow in Rejected())
         {
             var result = update
@@ -250,7 +330,10 @@ public sealed class OrderTrackingBoundarySourceTests(OrderDeletionReadinessFixtu
     private static UpsertOrderRequest Request(int process, string? tracking) =>
         JsonSerializer.Deserialize<UpsertOrderRequest>(JsonSerializer.Serialize(new
         {
-            Name = "Tracking target", ProcessId = process, Quantity = 1, TrackingNumber = tracking,
+            Name = "Tracking target",
+            ProcessId = process,
+            Quantity = 1,
+            TrackingNumber = tracking,
         }))!;
 
     private HttpClient Client(WebApplicationFactory<Program> app, string? permission)
@@ -339,8 +422,8 @@ public sealed class OrderTrackingBoundarySourceTests(OrderDeletionReadinessFixtu
             await using var command = database.Database.GetDbConnection().CreateCommand();
             command.CommandTimeout = 30;
             command.CommandText = update
-                ? """UPDATE public."Order" SET "TrackingNumber"=@tracking WHERE "ID"=@id RETURNING "ID"""
-                : """INSERT INTO public."Order" ("ProcessID","Quantity","Manufactured","AllowSocialMedia","AllowCancellation","AllowPayment","TrackingNumber") VALUES (@process,1,0,false,false,false,@tracking) RETURNING "ID""";
+                ? """UPDATE public."Order" SET "TrackingNumber"=@tracking WHERE "ID"=@id RETURNING "ID";"""
+                : """INSERT INTO public."Order" ("ProcessID","Quantity","Manufactured","AllowSocialMedia","AllowCancellation","AllowPayment","TrackingNumber") VALUES (@process,1,0,false,false,false,@tracking) RETURNING "ID";""";
             command.Parameters.Add(new NpgsqlParameter("tracking", NpgsqlDbType.Text) { Value = (object?)tracking ?? DBNull.Value, Size = -1 });
             command.Parameters.Add(new NpgsqlParameter("id", NpgsqlDbType.Integer) { Value = id });
             command.Parameters.Add(new NpgsqlParameter("process", NpgsqlDbType.Integer) { Value = process });
