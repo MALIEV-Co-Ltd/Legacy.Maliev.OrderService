@@ -42,6 +42,7 @@ public sealed record OrderReadResponse(
         {
             UnitPrice = source.UnitPrice,
             DiscountPercent = source.DiscountPercent,
+            TrackingNumber = source.TrackingNumber,
             PromisedDate = source.PromisedDate,
             FinishedDate = source.FinishedDate,
             CreatedDate = source.CreatedDate,

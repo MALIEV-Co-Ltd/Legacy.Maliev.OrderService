@@ -55,8 +55,8 @@ public sealed record OrderResponse(int Id, int? CustomerId, int? EmployeeId, str
         HashCode.Combine(TrackingNumber, CreatedDate, ModifiedDate));
 }
 
-/// <summary>Original fresh-entity values before database calendar and decimal precision normalization.</summary>
-public sealed record OrderCreationSource(DateTime CreatedDate, DateTime? PromisedDate, DateTime? FinishedDate, decimal? UnitPrice, decimal? DiscountPercent);
+/// <summary>Original fresh-entity values before database calendar, decimal and tracking normalization.</summary>
+public sealed record OrderCreationSource(DateTime CreatedDate, DateTime? PromisedDate, DateTime? FinishedDate, decimal? UnitPrice, decimal? DiscountPercent, string? TrackingNumber = null);
 /// <summary>Writable order fields; computed values and server timestamps are not accepted.</summary>
 /// <param name="CustomerId">External customer scalar reference.</param>
 /// <param name="EmployeeId">External employee scalar reference.</param>
@@ -101,7 +101,7 @@ public sealed record UpsertOrderRequest(
     bool AllowSocialMedia,
     bool AllowCancellation,
     bool AllowPayment,
-    string? TrackingNumber,
+    [param: OrderTrackingNumberSourceLength] string? TrackingNumber,
     [param: StringLength(128)] string? OperationKey = null);
 public sealed record ProcessResponse(int Id, int CategoryId, string Name, DateTime? CreatedDate, DateTime? ModifiedDate); public sealed record UpsertProcessRequest(int CategoryId, [property: JsonConverter(typeof(ProcessScalarStringJsonConverter))] string Name);
 public sealed record CategoryResponse(int Id, string? Name, DateTime? CreatedDate, DateTime? ModifiedDate); public sealed record UpsertCategoryRequest([property: JsonConverter(typeof(CategoryScalarStringJsonConverter))] string? Name);

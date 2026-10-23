@@ -210,7 +210,7 @@ namespace Legacy.Maliev.OrderService.Data.Migrations.Order
 
                     b.Property<string>("TrackingNumber")
                         .HasMaxLength(250)
-                        .HasColumnType("character varying(250)");
+                        .HasColumnType("text");
 
                     b.Property<int?>("Turnaround")
                         .ValueGeneratedOnAddOrUpdate()
@@ -232,6 +232,7 @@ namespace Legacy.Maliev.OrderService.Data.Migrations.Order
                         {
                             t.HasCheckConstraint("CK_Order_Name_SourceLength", "char_length(\"Name\") + char_length(regexp_replace(\"Name\" COLLATE \"C\", U&'[\\0001-\\FFFF]', '', 'g')) <= 100");
                             t.HasCheckConstraint("CK_Order_Description_SourceLength", "char_length(\"Description\") + char_length(regexp_replace(\"Description\" COLLATE \"C\", U&'[\\0001-\\FFFF]', '', 'g')) <= 250");
+                            t.HasCheckConstraint("CK_Order_TrackingNumber_SourceLength", "char_length(\"TrackingNumber\") + char_length(regexp_replace(\"TrackingNumber\" COLLATE \"C\", U&'[\\0001-\\FFFF]', '', 'g')) <= 250");
                         });
                 });
 

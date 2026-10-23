@@ -1,4 +1,3 @@
-using System.ComponentModel.DataAnnotations;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -35,9 +34,9 @@ public sealed class OrderTrackingBoundarySourceTests(OrderDeletionReadinessFixtu
     [InlineData("repository", true)]
     [InlineData("sql", false)]
     [InlineData("sql", true)]
-    public async Task CurrentVarcharExcessAsciiTrailingSpaceOutcomeIsRecorded(string boundary, bool update)
+    public async Task QualifiedExcessAsciiPaddingRetainsFreshHttpLiteralAndBoundedStoredValue(string boundary, bool update)
     {
-        // This captures current Legacy behavior, not an original SQL Server oracle.
+        // DataMigration263 separately records current-source EF8.0.28 parameter and saved-value behavior.
         await using var app = await fixture.AppAsync(null);
         using var lifetime = new CancellationTokenSource(TimeSpan.FromSeconds(60));
         var token = lifetime.Token;
@@ -62,7 +61,7 @@ public sealed class OrderTrackingBoundarySourceTests(OrderDeletionReadinessFixtu
             if (update) Assert.Empty(raw);
             else
             {
-                AssertWireTracking(raw, expectedStored);
+                AssertWireTracking(raw, input);
                 id = JsonSerializer.Deserialize<OrderResponse>(raw, WebJson)!.Id;
             }
         }
@@ -133,11 +132,11 @@ public sealed class OrderTrackingBoundarySourceTests(OrderDeletionReadinessFixtu
             using var read = await reader.GetAsync($"/orders/{id}", token);
             Assert.Equal(HttpStatusCode.OK, read.StatusCode);
             var readRaw = await read.Content.ReadAsStringAsync(token);
-            AssertWireTracking(readRaw, literal);
+            AssertWireTracking(readRaw, Stored(literal));
             var actual = JsonSerializer.Deserialize<OrderResponse>(readRaw, WebJson);
             Assert.NotNull(actual);
-            Assert.Equal(literal, actual.TrackingNumber);
-            await AssertStoredAsync(app, id, literal, token);
+            Assert.Equal(Stored(literal), actual.TrackingNumber);
+            await AssertStoredAsync(app, id, Stored(literal), token);
             if (update) Assert.Equal(originalTarget, await OtherTargetFieldsAsync(app, existing, true, token));
             Assert.Equal(otherRows, await SnapshotAsync(app, token, writtenIds));
         }
@@ -179,11 +178,18 @@ public sealed class OrderTrackingBoundarySourceTests(OrderDeletionReadinessFixtu
             else
             {
                 var created = await service.CreateOrderAsync(Request(process, literal), token);
-                Assert.Equal(literal, created.TrackingNumber);
+                Assert.Equal(Stored(literal), created.TrackingNumber);
+                Assert.NotNull(created.SourceCreation);
+                Assert.Equal(literal, created.SourceCreation.TrackingNumber);
+                var read = await service.GetOrderAsync(created.Id, token);
+                Assert.NotNull(read);
+                Assert.Equal(created, read);
+                Assert.Equal(created.GetHashCode(), read.GetHashCode());
+                Assert.Equal(JsonSerializer.Serialize(created), JsonSerializer.Serialize(read));
                 id = created.Id;
                 writtenIds.Add(id);
             }
-            await AssertStoredAsync(app, id, literal, token);
+            await AssertStoredAsync(app, id, Stored(literal), token);
             if (update) Assert.Equal(originalTarget, await OtherTargetFieldsAsync(app, existing, true, token));
             Assert.Equal(otherRows, await SnapshotAsync(app, token, writtenIds));
         }
@@ -239,7 +245,7 @@ public sealed class OrderTrackingBoundarySourceTests(OrderDeletionReadinessFixtu
             var otherRows = await SnapshotAsync(app, token, writtenIds);
             var id = await WritePhysicalAsync(database, update, existing, process, literal, token);
             if (!writtenIds.Contains(id)) writtenIds.Add(id);
-            await AssertStoredAsync(app, id, literal, token);
+            await AssertStoredAsync(app, id, Stored(literal), token);
             if (update) Assert.Equal(originalTarget, await OtherTargetFieldsAsync(app, existing, false, token));
             Assert.Equal(otherRows, await SnapshotAsync(app, token, writtenIds));
         }
@@ -306,17 +312,53 @@ public sealed class OrderTrackingBoundarySourceTests(OrderDeletionReadinessFixtu
     {
         var parameter = typeof(UpsertOrderRequest).GetConstructors().Single().GetParameters()
             .Single(value => value.Name == nameof(UpsertOrderRequest.TrackingNumber));
-        var bound = Assert.Single(parameter.GetCustomAttributes(typeof(StringLengthAttribute), false).Cast<StringLengthAttribute>());
-        Assert.Equal(250, bound.MaximumLength);
+        var bound = Assert.Single(parameter.GetCustomAttributes(typeof(OrderTrackingNumberSourceLengthAttribute), false).Cast<OrderTrackingNumberSourceLengthAttribute>());
+        Assert.Equal(250, OrderTrackingNumberSourceLengthAttribute.MaximumLength);
         foreach (var value in Accepted()) Assert.True(bound.IsValid(value));
         foreach (var value in Rejected()) Assert.False(bound.IsValid(value));
     }
 
+    [Fact]
+    public async Task FreshTrackingLiteralIsCachedWhileDurableReplayReturnsStoredValueWithoutMutation()
+    {
+        await using var app = await fixture.AppAsync(null);
+        using var lifetime = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        var token = lifetime.Token;
+        var (process, _) = await SeedAsync(app, token);
+        var literal = string.Concat(Enumerable.Repeat("😀", 124)) + "   ";
+        var request = Request(process, literal) with { OperationKey = Guid.NewGuid().ToString("N") };
+        using var cached = Client(app, OrderPermissions.Create);
+        cached.DefaultRequestHeaders.Add("Idempotency-Key", Guid.NewGuid().ToString("N"));
+        using var first = await cached.PostAsJsonAsync("/orders", request, token);
+        Assert.Equal(HttpStatusCode.Created, first.StatusCode);
+        var raw = await first.Content.ReadAsStringAsync(token);
+        AssertWireTracking(raw, literal);
+        var id = JsonSerializer.Deserialize<OrderResponse>(raw, WebJson)!.Id;
+        await AssertStoredAsync(app, id, Stored(literal), token);
+        var unchanged = await SnapshotAsync(app, token);
+        using var replay = await cached.PostAsJsonAsync("/orders", request, token);
+        Assert.Equal(HttpStatusCode.Created, replay.StatusCode);
+        Assert.Equal(raw, await replay.Content.ReadAsStringAsync(token));
+        Assert.Equal(unchanged, await SnapshotAsync(app, token));
+        using var durable = Client(app, OrderPermissions.Create);
+        using var durableReplay = await durable.PostAsJsonAsync("/orders", request with { TrackingNumber = "Different replay input" }, token);
+        Assert.Equal(HttpStatusCode.Created, durableReplay.StatusCode);
+        var durableRaw = await durableReplay.Content.ReadAsStringAsync(token);
+        AssertWireTracking(durableRaw, Stored(literal));
+        Assert.Equal(id, JsonSerializer.Deserialize<OrderResponse>(durableRaw, WebJson)!.Id);
+        Assert.Equal(unchanged, await SnapshotAsync(app, token));
+    }
+
     private static string?[] Accepted() =>
         [null, "", "  ไทย 😀  ", new string('ก', 250), string.Concat(Enumerable.Repeat("😀", 125)),
-            new string('ก', 248) + "  ", string.Concat(Enumerable.Repeat("😀", 124)) + "  "];
+            new string('ก', 248) + "  ", string.Concat(Enumerable.Repeat("😀", 124)) + "  ",
+            new string('A', 250) + " ", string.Concat(Enumerable.Repeat("😀", 125)) + " ",
+            string.Concat(Enumerable.Repeat("😀", 124)) + "   "];
 
-    private static string[] Rejected() => [string.Concat(Enumerable.Repeat("😀", 126)), new string('ก', 251)];
+    private static string[] Rejected() => [string.Concat(Enumerable.Repeat("😀", 126)), new string('ก', 251),
+        new string('A', 250) + "\u00a0", new string('A', 250) + "\t", new string('A', 249) + "😀 "];
+
+    private static string? Stored(string? input) => input is { Length: > 250 } ? input[..250] : input;
 
     private static void AssertWireTracking(string raw, string? tracking)
     {

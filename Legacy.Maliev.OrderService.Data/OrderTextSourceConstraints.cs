@@ -10,10 +10,14 @@ internal static class OrderTextSourceConstraints
     internal const string DescriptionLengthSql = """
         char_length("Description") + char_length(regexp_replace("Description" COLLATE "C", U&'[\0001-\FFFF]', '', 'g')) <= 250
         """;
+    internal const string TrackingNumberLengthSql = """
+        char_length("TrackingNumber") + char_length(regexp_replace("TrackingNumber" COLLATE "C", U&'[\0001-\FFFF]', '', 'g')) <= 250
+        """;
 
     internal static void Validate(UpsertOrderRequest request)
     {
-        if (request.Name is { Length: > 100 } || request.Description is { Length: > 250 })
+        if (request.Name is { Length: > 100 } || request.Description is { Length: > 250 }
+            || !OrderTrackingNumberSourceLengthAttribute.IsAllowed(request.TrackingNumber))
             throw new ArgumentException("The request is invalid.", nameof(request));
     }
 }
