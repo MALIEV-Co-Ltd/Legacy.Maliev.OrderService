@@ -98,8 +98,8 @@ public sealed partial class OrderTextPhysicalPaddingSourceTests
         {
             await SeedProcessStatusPaddingAsync(app, token);
             await MigrationExecuteAsync(context, table == "Process"
-                ? """ALTER TABLE public."Process" ALTER COLUMN "Name" TYPE text COLLATE pg_catalog."C"""
-                : """ALTER TABLE public."OrderStatus" ALTER COLUMN "Name" TYPE text COLLATE pg_catalog."POSIX", ALTER COLUMN "Description" TYPE text COLLATE pg_catalog."C""", token);
+                ? """ALTER TABLE public."Process" ALTER COLUMN "Name" TYPE text COLLATE pg_catalog."C";"""
+                : """ALTER TABLE public."OrderStatus" ALTER COLUMN "Name" TYPE text COLLATE pg_catalog."POSIX", ALTER COLUMN "Description" TYPE text COLLATE pg_catalog."C";""", token);
             var before = await ProcessStatusMigrationSnapshotAsync(app, context, token);
             var lockTimeout = await MigrationScalarAsync(context, "SHOW lock_timeout", token);
             var statementTimeout = await MigrationScalarAsync(context, "SHOW statement_timeout", token);
