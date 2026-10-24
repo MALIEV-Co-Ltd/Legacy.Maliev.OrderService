@@ -125,7 +125,7 @@ public partial class EnforceNullableCatalogSourceStrings : Migration
                 IF definition IS NULL OR definition IS DISTINCT FROM expected THEN
                     RAISE EXCEPTION 'FileFormat.Extension downgrade constraint is incompatible.';
                 END IF;
-                DROP TABLE "__NullableCatalogSourceStringsGuard";
+                DROP TABLE pg_temp."__NullableCatalogSourceStringsGuard";
             END $guard$;
             ALTER TABLE public."Category" DROP CONSTRAINT "CK_Category_Name_SourceLength";
             ALTER TABLE public."FileFormat" DROP CONSTRAINT "CK_FileFormat_Name_SourceLength";

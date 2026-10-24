@@ -45,7 +45,7 @@ public partial class EnforceNullableOrderTextSourceLengths : Migration
                 IF definition IS NULL OR definition IS DISTINCT FROM expected THEN
                     RAISE EXCEPTION 'Order source text upgrade name default is incompatible.';
                 END IF;
-                DROP TABLE "__OrderTextSourceGuard";
+                DROP TABLE pg_temp."__OrderTextSourceGuard";
             END $guard$;
             ALTER TABLE public."Order" ALTER COLUMN "Name" TYPE text;
             ALTER TABLE public."Order" ALTER COLUMN "Description" TYPE text;
@@ -116,7 +116,7 @@ public partial class EnforceNullableOrderTextSourceLengths : Migration
                 IF definition IS NULL OR definition IS DISTINCT FROM expected THEN
                     RAISE EXCEPTION 'Order.Description downgrade constraint is incompatible.';
                 END IF;
-                DROP TABLE "__OrderTextSourceGuard";
+                DROP TABLE pg_temp."__OrderTextSourceGuard";
             END $guard$;
             ALTER TABLE public."Order" DROP CONSTRAINT "CK_Order_Name_SourceLength";
             ALTER TABLE public."Order" DROP CONSTRAINT "CK_Order_Description_SourceLength";
