@@ -115,7 +115,7 @@ public partial class EnforceTrackingSourceStorage : Migration
                     AND tgattr::text = (SELECT attnum::text FROM pg_attribute WHERE attrelid = 'public."Order"'::regclass AND attname = 'TrackingNumber')) THEN
                     RAISE EXCEPTION 'Order tracking downgrade normalizer is incompatible.';
                 END IF;
-                DROP TABLE "__OrderTrackingSourceGuard";
+                DROP TABLE pg_temp."__OrderTrackingSourceGuard";
             END $guard$;
             DROP TRIGGER "NormalizeOrderTrackingSource" ON public."Order";
             DROP FUNCTION public."NormalizeOrderTrackingSource"();

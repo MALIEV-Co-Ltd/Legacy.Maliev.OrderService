@@ -93,7 +93,7 @@ public partial class NormalizeOrderTextSourceStorage : Migration
                     RAISE EXCEPTION 'Order text normalizer constraint is incompatible.';
                 END IF;
             END LOOP;
-            DROP TABLE "__OrderTextPaddingGuard";
+            DROP TABLE pg_temp."__OrderTextPaddingGuard";
         END $guard$;
 
         """;

@@ -78,7 +78,7 @@ public partial class RequireOrderStatusSourceStrings : Migration
                         RAISE EXCEPTION 'OrderStatus downgrade constraint is incompatible.';
                     END IF;
                 END LOOP;
-                DROP TABLE "__OrderStatusSourceStringGuard";
+                DROP TABLE pg_temp."__OrderStatusSourceStringGuard";
             END $guard$;
             ALTER TABLE public."OrderStatus" DROP CONSTRAINT "CK_OrderStatus_Name_SourceLength";
             ALTER TABLE public."OrderStatus" DROP CONSTRAINT "CK_OrderStatus_Description_SourceLength";

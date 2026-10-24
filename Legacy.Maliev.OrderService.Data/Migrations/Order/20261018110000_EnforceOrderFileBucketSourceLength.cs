@@ -71,7 +71,7 @@ public partial class EnforceOrderFileBucketSourceLength : Migration
                 IF definition IS NULL OR definition IS DISTINCT FROM expected THEN
                     RAISE EXCEPTION 'OrderFile bucket downgrade constraint is incompatible.';
                 END IF;
-                DROP TABLE "__OrderFileBucketSourceGuard";
+                DROP TABLE pg_temp."__OrderFileBucketSourceGuard";
             END $guard$;
             ALTER TABLE public."OrderFile" DROP CONSTRAINT "CK_OrderFile_Bucket_SourceLength";
             ALTER TABLE public."OrderFile" ALTER COLUMN "Bucket" TYPE character varying(50);

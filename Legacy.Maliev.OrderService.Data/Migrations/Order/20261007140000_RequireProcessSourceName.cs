@@ -67,7 +67,7 @@ public partial class RequireProcessSourceName : Migration
                 IF definition IS NULL OR definition IS DISTINCT FROM expected THEN
                     RAISE EXCEPTION 'Process downgrade constraint is incompatible.';
                 END IF;
-                DROP TABLE "__ProcessSourceNameGuard";
+                DROP TABLE pg_temp."__ProcessSourceNameGuard";
             END $guard$;
             ALTER TABLE public."Process" DROP CONSTRAINT "CK_Process_Name_SourceLength";
             ALTER TABLE public."Process" ALTER COLUMN "Name" TYPE character varying(50);
