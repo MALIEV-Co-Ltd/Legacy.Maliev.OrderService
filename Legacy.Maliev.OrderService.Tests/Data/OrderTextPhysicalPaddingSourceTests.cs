@@ -25,7 +25,7 @@ namespace Legacy.Maliev.OrderService.Tests.Data;
 // blob4d4d734ac28966fbe6b6b7d2861fd741bbd5b9e3; every overlong Name/Description is refused before lookup.
 // DataMigration263's current EF8.0.28 ANSI-ON synthetic witness qualifies physical padding only;
 // this is neither an original deployment/EF8.0.3 claim nor permission to broaden the HTTP guards.
-public sealed class OrderTextPhysicalPaddingSourceTests(OrderDeletionReadinessFixture fixture)
+public sealed partial class OrderTextPhysicalPaddingSourceTests(OrderDeletionReadinessFixture fixture)
     : IClassFixture<OrderDeletionReadinessFixture>
 {
     [Theory]
