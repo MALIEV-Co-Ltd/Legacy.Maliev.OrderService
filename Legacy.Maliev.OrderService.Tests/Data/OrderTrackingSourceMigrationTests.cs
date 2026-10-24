@@ -124,7 +124,7 @@ public sealed class OrderTrackingSourceMigrationTests(OrderDeletionReadinessFixt
                 _ => throw new ArgumentOutOfRangeException(nameof(drift)),
             }, token);
             await AssertRefusedAsync(context, Previous, token);
-        });
+        }, Target);
     }
 
     [Fact]
