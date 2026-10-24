@@ -269,7 +269,7 @@ public sealed class OrderStatusSourceMigrationTests(OrderDeletionReadinessFixtur
             context.Database.SetCommandTimeout(40);
             using var lifetime = new CancellationTokenSource(TimeSpan.FromSeconds(45));
             await context.Database.OpenConnectionAsync(lifetime.Token);
-            if (target is not null) await MigrateAsync(context, target);
+            await MigrateAsync(context, target ?? Target);
             return new OwnedScope(app, scope.Value, context);
         }
         catch
