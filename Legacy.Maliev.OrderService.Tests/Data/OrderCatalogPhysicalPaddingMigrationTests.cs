@@ -117,7 +117,7 @@ public sealed partial class OrderTextPhysicalPaddingSourceTests
             var check = $"CK_{table}_{field}_SourceLength";
             var function = CatalogFunction(table);
             var columns = table == "Category" ? "\"Name\"" : "\"Name\",\"Extension\"";
-            if (drift == "generated" && downgrade)
+            if ((drift is "generated" or "type") && downgrade)
                 await MigrationExecuteAsync(context, $"DROP TRIGGER \"{function}\" ON public.\"{table}\"", token);
             await MigrationExecuteAsync(context, drift switch
             {
@@ -134,7 +134,7 @@ public sealed partial class OrderTextPhysicalPaddingSourceTests
                 "check" => $"ALTER TABLE public.\"{table}\" DROP CONSTRAINT \"{check}\"; ALTER TABLE public.\"{table}\" ADD CONSTRAINT \"{check}\" CHECK (true)",
                 _ => throw new ArgumentOutOfRangeException(nameof(drift)),
             }, token);
-            if (drift == "generated" && downgrade)
+            if ((drift is "generated" or "type") && downgrade)
                 await MigrationExecuteAsync(context, $"CREATE TRIGGER \"{function}\" BEFORE INSERT OR UPDATE OF {columns} ON public.\"{table}\" FOR EACH ROW EXECUTE FUNCTION public.\"{function}\"()", token);
             await AssertCatalogNormalizerRefusedAsync(app, context, downgrade ? BeforeCatalogNormalizer : WithCatalogNormalizer, token);
         }, downgrade ? WithCatalogNormalizer : BeforeCatalogNormalizer);
