@@ -220,7 +220,7 @@ public sealed partial class OrderTextPhysicalPaddingSourceTests
         await context.Database.OpenConnectionAsync(lifetime.Token);
         try
         {
-            if (target is not null) await MigrateNormalizerAsync(context, target, lifetime.Token);
+            await MigrateNormalizerAsync(context, target ?? WithNormalizer, lifetime.Token);
             await action(app, context, lifetime.Token);
         }
         finally
