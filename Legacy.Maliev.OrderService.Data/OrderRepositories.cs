@@ -29,7 +29,7 @@ public sealed partial class OrderRepository(OrderDbContext orders, OrderStatusDb
             var stored = await ReadOrder(entity.Id, c) ?? throw new InvalidOperationException();
             return stored with
             {
-                SourceCreation = new(DateTime.SpecifyKind(n, DateTimeKind.Utc), r.PromisedDate, r.FinishedDate, r.UnitPrice, r.DiscountPercent),
+                SourceCreation = new(DateTime.SpecifyKind(n, DateTimeKind.Utc), r.PromisedDate, r.FinishedDate, r.UnitPrice, r.DiscountPercent, r.TrackingNumber),
             };
         }
         catch (DbUpdateException exception) when (
