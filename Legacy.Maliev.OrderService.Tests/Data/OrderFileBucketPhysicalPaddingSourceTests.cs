@@ -152,9 +152,10 @@ public sealed partial class OrderTextPhysicalPaddingSourceTests
         foreach (var column in new[] { "Bucket", "ObjectName" })
         {
             var before = await BucketSnapshotAsync(app, token);
-            var columns = column == "Bucket" ? "\"ObjectName\"" : "\"Bucket\"";
-            var error = await Assert.ThrowsAsync<PostgresException>(() => db.Database.ExecuteSqlRawAsync(
-                $"INSERT INTO public.\"OrderFile\" (\"ID\",\"OrderID\",{columns}) VALUES (30,1,'control')", token));
+            var insertWithoutRequiredColumn = column == "Bucket"
+                ? """INSERT INTO public."OrderFile" ("ID","OrderID","ObjectName") VALUES (30,1,'control')"""
+                : """INSERT INTO public."OrderFile" ("ID","OrderID","Bucket") VALUES (30,1,'control')""";
+            var error = await Assert.ThrowsAsync<PostgresException>(() => db.Database.ExecuteSqlRawAsync(insertWithoutRequiredColumn, token));
             Assert.Equal(PostgresErrorCodes.NotNullViolation, error.SqlState);
             Assert.Equal(column, error.ColumnName);
             Assert.Equal(before, await BucketSnapshotAsync(app, token));
