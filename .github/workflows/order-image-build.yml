@@ -1,0 +1,70 @@
+name: Order API image build
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'Legacy.Maliev.OrderService.Api/Dockerfile'
+      - '.github/workflows/order-image-build.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'Legacy.Maliev.OrderService.Api/Dockerfile'
+      - '.github/workflows/order-image-build.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  image-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Check out exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Build exact Dockerfile without publishing
+        timeout-minutes: 30
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          tag="order-image-build:${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          test ! -e "$RUNNER_TEMP/order-image-id"
+          docker build --progress=plain --iidfile "$RUNNER_TEMP/order-image-id" \
+            --tag "$tag" --file Legacy.Maliev.OrderService.Api/Dockerfile . 2>&1 | tee "$RUNNER_TEMP/order-image-build.log"
+          iid="$(cat "$RUNNER_TEMP/order-image-id")"
+          [[ "$iid" =~ ^sha256:[0-9a-f]{64}$ ]]
+          test "$(docker image inspect --format '{{.Id}}' "$tag")" = "$iid"
+          printf '%s\n' "$iid" > "$RUNNER_TEMP/order-image-settled"
+          if grep -Ei '(^|[[:space:]])warning[[:space:]]+([A-Z]+[0-9]+|:)' "$RUNNER_TEMP/order-image-build.log"; then
+            echo 'Build warning found' >&2
+            exit 1
+          fi
+          printf 'Built head=%s image=%s tag=%s\n' "$EXPECTED_HEAD" "$iid" "$tag"
+      - name: Remove exact owned image tag
+        if: always()
+        timeout-minutes: 2
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="order-image-build:${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          if ! test -s "$RUNNER_TEMP/order-image-settled"; then
+            echo 'Build settlement marker absent; daemon/image custody remains unverified' >&2
+            exit 1
+          fi
+          iid="$(cat "$RUNNER_TEMP/order-image-id")"
+          [[ "$iid" =~ ^sha256:[0-9a-f]{64}$ ]]
+          test "$(cat "$RUNNER_TEMP/order-image-settled")" = "$iid"
+          test "$(docker image inspect --format '{{.Id}}' "$tag")" = "$iid"
+          docker image rm "$tag"
+          docker info >/dev/null
+          if docker image inspect "$tag" >/dev/null 2>&1; then
+            echo 'Owned image tag remains' >&2
+            exit 1
+          fi
+          printf 'Removed exact tag=%s for image=%s; runner/daemon destruction not asserted\n' "$tag" "$iid"
