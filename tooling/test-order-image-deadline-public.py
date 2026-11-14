@@ -43,6 +43,23 @@ class AdmissionTests(unittest.TestCase):
         with patch.object(deadline.dt, 'datetime', FrozenDateTime), patch.object(deadline.urllib.request, 'urlopen', side_effect=value if isinstance(value, Exception) else None, return_value=None if isinstance(value, Exception) else value):
             return deadline.fetch('https://example.invalid')
 
+    def test_each_fetch_uses_distinct_nonce_and_preserves_query(self):
+        seen = []
+        def capture(request, timeout):
+            seen.append((request.full_url, timeout))
+            return Response()
+        with patch.object(deadline.dt, 'datetime', FrozenDateTime), patch.object(deadline.urllib.request, 'urlopen', side_effect=capture), patch.object(deadline.secrets, 'token_hex', side_effect=['a' * 32, 'b' * 32]):
+            deadline.fetch('https://example.invalid/run')
+            deadline.fetch('https://example.invalid/jobs?per_page=100')
+        self.assertEqual([('https://example.invalid/run?codex_nonce=' + 'a' * 32, 10), ('https://example.invalid/jobs?per_page=100&codex_nonce=' + 'b' * 32, 10)], seen)
+
+    def test_stale_clock_diagnostic_is_static_and_does_not_accept_response(self):
+        from contextlib import redirect_stderr
+        captured = io.StringIO()
+        with patch.object(deadline.dt, 'datetime', FrozenDateTime), patch.object(deadline.urllib.request, 'urlopen', return_value=Response(NOW - dt.timedelta(seconds=31))), redirect_stderr(captured):
+            with self.assertRaises(ValueError):
+                deadline.fetch_labeled('https://example.invalid/private', 'run')
+        self.assertEqual('Order metadata endpoint=run stale or skewed server clock\n', captured.getvalue())
     def test_429_and_timeout_fail_closed(self):
         for error in (HTTPError('https://example.invalid',429,'rate limited',None,None), TimeoutError()):
             with self.subTest(error=type(error).__name__), self.assertRaises(type(error)):

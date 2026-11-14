@@ -544,7 +544,27 @@ public sealed class OrderFileLiteralHttpTests(OrderDeletionReadinessFixture fixt
 
     private async Task<OrderFileResponse> CreateAsync(HttpClient client, string bucket, string objectName)
     {
-        using var response = await client.PostAsync(Query(9003, bucket, objectName), null);
+        var query = Query(9003, bucket, objectName);
+        try
+        {
+            using var probe = new HttpRequestMessage(HttpMethod.Post, query);
+            var original = probe.RequestUri!.OriginalString;
+            var resolved = new Uri(client.BaseAddress!, probe.RequestUri!);
+            var escaped = resolved.GetComponents(UriComponents.Query, UriFormat.UriEscaped);
+            output.WriteLine(JsonSerializer.Serialize(new
+            {
+                stage = "pre-send-uri-probe",
+                queryLength = query.Length,
+                queryEndsWithEncodedSpaces = query.EndsWith("%20%20", StringComparison.OrdinalIgnoreCase),
+                originalLength = original.Length,
+                originalEqualsQuery = string.Equals(original, query, StringComparison.Ordinal),
+                originalEndsWithEncodedSpaces = original.EndsWith("%20%20", StringComparison.OrdinalIgnoreCase),
+                resolvedQueryLength = escaped.Length,
+                resolvedEndsWithEncodedSpaces = escaped.EndsWith("%20%20", StringComparison.OrdinalIgnoreCase),
+            }));
+        }
+        catch (Exception) { /* Diagnostic output must not change test behavior. */ }
+        using var response = await client.PostAsync(query, null);
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         Assert.NotNull(response.Headers.Location);
         var file = (await response.Content.ReadFromJsonAsync<OrderFileResponse>())!;

@@ -4,6 +4,7 @@ import email.utils
 import json
 import os
 import re
+import secrets
 import sys
 import urllib.request
 from urllib.error import HTTPError
@@ -13,6 +14,8 @@ LIMIT = 262144
 
 
 def fetch(url):
+    separator = '&' if '?' in url else '?'
+    url = f'{url}{separator}codex_nonce={secrets.token_hex(16)}'
     request = urllib.request.Request(url, headers={'Cache-Control': 'no-cache',
         'Accept': 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28',
         'User-Agent': 'order-image-admission'})
@@ -63,6 +66,10 @@ def fetch_labeled(url, label):
         raise ValueError('unknown metadata endpoint')
     try:
         return fetch(url)
+    except ValueError as error:
+        if str(error) == 'stale or skewed server clock':
+            print(f'Order metadata endpoint={label} stale or skewed server clock', file=sys.stderr)
+        raise
     except HTTPError as error:
         code = error.code if type(error.code) is int and 100 <= error.code <= 599 else 'unknown'
         print(f'Order metadata endpoint={label} HTTP status={code}', file=sys.stderr)
