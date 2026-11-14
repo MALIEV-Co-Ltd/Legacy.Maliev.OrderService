@@ -491,7 +491,39 @@ public sealed class OrderFileLiteralHttpTests(OrderDeletionReadinessFixture fixt
     {
         services.RemoveAll<TimeProvider>();
         services.AddSingleton<TimeProvider>(clock ?? new FakeTimeProvider(new DateTimeOffset(2026, 10, 11, 0, 0, 0, TimeSpan.Zero)));
+        services.Configure<Microsoft.AspNetCore.Mvc.MvcOptions>(options => options.Filters.Add(new QueryBoundaryDiagnostic(output)));
     });
+
+    private sealed class QueryBoundaryDiagnostic(ITestOutputHelper output) : Microsoft.AspNetCore.Mvc.Filters.IAsyncActionFilter
+    {
+        public async Task OnActionExecutionAsync(Microsoft.AspNetCore.Mvc.Filters.ActionExecutingContext context,
+            Microsoft.AspNetCore.Mvc.Filters.ActionExecutionDelegate next)
+        {
+            try
+            {
+                if (context.ActionDescriptor is Microsoft.AspNetCore.Mvc.Controllers.ControllerActionDescriptor action
+                    && action.ControllerName == "Files" && action.MethodInfo.Name == "CreateOrderFileEntryAsync"
+                    && context.ActionArguments.TryGetValue("objectName", out var argument))
+                {
+                    var raw = context.HttpContext.Request.QueryString.Value ?? "";
+                    var decoded = context.HttpContext.Request.Query["objectName"].ToString();
+                    var bound = argument as string;
+                    output.WriteLine(JsonSerializer.Serialize(new
+                    {
+                        stage = "server-query-binding",
+                        rawEndsWithTwoEncodedSpaces = raw.EndsWith("%20%20", StringComparison.OrdinalIgnoreCase),
+                        decodedLength = decoded.Length,
+                        decodedTrailingSpaces = decoded.Length - decoded.TrimEnd(' ').Length,
+                        boundLength = bound?.Length,
+                        boundTrailingSpaces = bound is null ? (int?)null : bound.Length - bound.TrimEnd(' ').Length,
+                        decodedEqualsBound = string.Equals(decoded, bound, StringComparison.Ordinal),
+                    }));
+                }
+            }
+            catch (Exception) { /* Diagnostic output must not change test behavior. */ }
+            await next();
+        }
+    }
 
     private HttpClient Client(WebApplicationFactory<Program> app, string permission)
     {
