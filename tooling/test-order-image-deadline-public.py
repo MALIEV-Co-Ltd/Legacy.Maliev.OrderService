@@ -28,6 +28,17 @@ class Response:
     def read(self, size): return self.body[:size]
 
 class AdmissionTests(unittest.TestCase):
+    def test_http_diagnostic_reports_only_static_endpoint_and_bounded_status(self):
+        from contextlib import redirect_stderr
+        for status in (403, 429, 700):
+            error = HTTPError('https://example.invalid/private', status, 'sensitive body', None, None)
+            captured = io.StringIO()
+            with self.subTest(status=status), patch.object(deadline, 'fetch', side_effect=error), redirect_stderr(captured):
+                with self.assertRaises(HTTPError):
+                    deadline.fetch_labeled('https://example.invalid/private', 'jobs')
+            expected = status if status <= 599 else 'unknown'
+            self.assertEqual(f'Order metadata endpoint=jobs HTTP status={expected}\n', captured.getvalue())
+
     def fetch(self, value):
         with patch.object(deadline.dt, 'datetime', FrozenDateTime), patch.object(deadline.urllib.request, 'urlopen', side_effect=value if isinstance(value, Exception) else None, return_value=None if isinstance(value, Exception) else value):
             return deadline.fetch('https://example.invalid')
