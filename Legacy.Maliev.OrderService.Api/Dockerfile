@@ -20,10 +20,11 @@ RUN dotnet publish Legacy.Maliev.OrderService.Api/Legacy.Maliev.OrderService.Api
     --configuration Release --no-restore --output /app /p:UseAppHost=false \
     -p:MalievWorkspaceRoot=/dependencies
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:11.0 AS runtime
 WORKDIR /app
 COPY --from=build --chown=$APP_UID:$APP_UID /app .
 USER $APP_UID
 EXPOSE 8080
-ENV ASPNETCORE_URLS=http://+:8080
+ENV ASPNETCORE_URLS=http://+:8080 \
+    DOTNET_ROLL_FORWARD=Major
 ENTRYPOINT ["dotnet", "Legacy.Maliev.OrderService.Api.dll"]

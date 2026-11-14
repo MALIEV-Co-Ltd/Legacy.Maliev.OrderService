@@ -1,0 +1,90 @@
+name: Order runtime11 compatibility
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  validate:
+    name: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      DOTNET_ROLL_FORWARD: LatestMajor
+      ORDER_REQUIRED_RUNTIME_MAJOR: '11'
+      MalievWorkspaceRoot: ${{ github.workspace }}/.dependencies
+      VSTestCollect: XPlat Code Coverage
+      VSTestLogger: trx
+      VSTestResultsDirectory: ${{ github.workspace }}/runner-results
+    steps:
+      - name: Check out exact OrderService source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Check out ServiceDefaults
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: MALIEV-Co-Ltd/Legacy.Maliev.ServiceDefaults
+          ref: 7edcd961024868513fd5f373cab3dcb261197f77
+          path: .dependencies/Legacy.Maliev.ServiceDefaults
+          persist-credentials: false
+      - name: Check out CompatibilityContracts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: MALIEV-Co-Ltd/Legacy.Maliev.CompatibilityContracts
+          ref: 78e48ffc4ee000df0510cba5e7c7a3c4c4d539d7
+          path: .dependencies/Legacy.Maliev.CompatibilityContracts
+          persist-credentials: false
+      - name: Check out pinned validation source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: MALIEV-Co-Ltd/Legacy.Maliev.Workflows
+          ref: e3a6093324a24968876782153286f52db8b29fd8
+          path: .dependencies/Legacy.Maliev.Workflows
+          persist-credentials: false
+      - name: Admit preinstalled hosted SDK11
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$(git -C .dependencies/Legacy.Maliev.Workflows rev-parse HEAD)" = e3a6093324a24968876782153286f52db8b29fd8
+          test -x /usr/share/dotnet/dotnet
+          /usr/share/dotnet/dotnet --list-sdks | grep -Eq '^11[.]0[.]100 '
+          /usr/share/dotnet/dotnet --list-runtimes > "$RUNNER_TEMP/order156-runtimes.txt"
+          grep -Eq '^Microsoft[.]NETCore[.]App 11[.]' "$RUNNER_TEMP/order156-runtimes.txt"
+          grep -Eq '^Microsoft[.]AspNetCore[.]App 11[.]' "$RUNNER_TEMP/order156-runtimes.txt"
+          if grep -Eq '^Microsoft[.](NETCore|AspNetCore)[.]App (1[2-9]|[2-9][0-9])[.]' "$RUNNER_TEMP/order156-runtimes.txt"; then exit 1; fi
+          echo 'DOTNET_ROOT=/usr/share/dotnet' >> "$GITHUB_ENV"
+          echo /usr/share/dotnet >> "$GITHUB_PATH"
+      - name: Verify pinned action and admit cleanup time
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s  %s\n' 2b0a4e2ff4de724c5ae1aafed3b405701f425e42e1fe53fa0ef5014b8be4c8a0 .dependencies/Legacy.Maliev.Workflows/actions/dotnet-validate/action.yml | sha256sum -c -
+          printf '%s  %s\n' 18a8d98d1d4a2e9bc5cc48c89b7c3f5895bfe14ccfb910fa293e5f2b90a89ace .github/actions/order-runtime11-validate/action.yml | sha256sum -c -
+          python3 -B scripts/test-order-runtime-deadline.py
+          python3 -B scripts/order-runtime-deadline.py validate
+      - name: Validate .NET solution
+        timeout-minutes: 30
+        uses: ./.github/actions/order-runtime11-validate
+        with:
+          solution: Legacy.Maliev.OrderService.slnx
+          use-local-maliev-dependencies: 'true'
+      - name: Gate owned production coverage
+        timeout-minutes: 3
+        run: python3 scripts/verify-runner-coverage.py runner-results
+      - name: Preserve validation evidence
+        if: always()
+        timeout-minutes: 2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: order-runtime11-${{ github.sha }}
+          path: |
+            runner-results
+            ${{ runner.temp }}/order156-runtimes.txt
+          if-no-files-found: warn
+          retention-days: 7

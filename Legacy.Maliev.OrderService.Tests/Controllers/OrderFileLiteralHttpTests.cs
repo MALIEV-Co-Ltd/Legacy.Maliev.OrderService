@@ -16,10 +16,11 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Time.Testing;
 using Npgsql;
 using NpgsqlTypes;
+using Xunit.Abstractions;
 
 namespace Legacy.Maliev.OrderService.Tests.Controllers;
 
-public sealed class OrderFileLiteralHttpTests(OrderDeletionReadinessFixture fixture)
+public sealed class OrderFileLiteralHttpTests(OrderDeletionReadinessFixture fixture, ITestOutputHelper output)
     : IClassFixture<OrderDeletionReadinessFixture>
 {
     private const string SentinelKey = "legacy:order:file-literal:sentinel";
@@ -490,7 +491,39 @@ public sealed class OrderFileLiteralHttpTests(OrderDeletionReadinessFixture fixt
     {
         services.RemoveAll<TimeProvider>();
         services.AddSingleton<TimeProvider>(clock ?? new FakeTimeProvider(new DateTimeOffset(2026, 10, 11, 0, 0, 0, TimeSpan.Zero)));
+        services.Configure<Microsoft.AspNetCore.Mvc.MvcOptions>(options => options.Filters.Add(new QueryBoundaryDiagnostic(output)));
     });
+
+    private sealed class QueryBoundaryDiagnostic(ITestOutputHelper output) : Microsoft.AspNetCore.Mvc.Filters.IAsyncActionFilter
+    {
+        public async Task OnActionExecutionAsync(Microsoft.AspNetCore.Mvc.Filters.ActionExecutingContext context,
+            Microsoft.AspNetCore.Mvc.Filters.ActionExecutionDelegate next)
+        {
+            try
+            {
+                if (context.ActionDescriptor is Microsoft.AspNetCore.Mvc.Controllers.ControllerActionDescriptor action
+                    && action.ControllerName == "Files" && action.MethodInfo.Name == "CreateOrderFileEntryAsync"
+                    && context.ActionArguments.TryGetValue("objectName", out var argument))
+                {
+                    var raw = context.HttpContext.Request.QueryString.Value ?? "";
+                    var decoded = context.HttpContext.Request.Query["objectName"].ToString();
+                    var bound = argument as string;
+                    output.WriteLine(JsonSerializer.Serialize(new
+                    {
+                        stage = "server-query-binding",
+                        rawEndsWithTwoEncodedSpaces = raw.EndsWith("%20%20", StringComparison.OrdinalIgnoreCase),
+                        decodedLength = decoded.Length,
+                        decodedTrailingSpaces = decoded.Length - decoded.TrimEnd(' ').Length,
+                        boundLength = bound?.Length,
+                        boundTrailingSpaces = bound is null ? (int?)null : bound.Length - bound.TrimEnd(' ').Length,
+                        decodedEqualsBound = string.Equals(decoded, bound, StringComparison.Ordinal),
+                    }));
+                }
+            }
+            catch (Exception) { /* Diagnostic output must not change test behavior. */ }
+            await next();
+        }
+    }
 
     private HttpClient Client(WebApplicationFactory<Program> app, string permission)
     {
@@ -509,23 +542,74 @@ public sealed class OrderFileLiteralHttpTests(OrderDeletionReadinessFixture fixt
         return await client.PutAsync($"/orders/files/{id}", content);
     }
 
-    private static async Task<OrderFileResponse> CreateAsync(HttpClient client, string bucket, string objectName)
+    private async Task<OrderFileResponse> CreateAsync(HttpClient client, string bucket, string objectName)
     {
-        using var response = await client.PostAsync(Query(9003, bucket, objectName), null);
+        var query = Query(9003, bucket, objectName);
+        try
+        {
+            using var probe = new HttpRequestMessage(HttpMethod.Post, query);
+            var original = probe.RequestUri!.OriginalString;
+            var resolved = new Uri(client.BaseAddress!, probe.RequestUri!);
+            var escaped = resolved.GetComponents(UriComponents.Query, UriFormat.UriEscaped);
+            output.WriteLine(JsonSerializer.Serialize(new
+            {
+                stage = "pre-send-uri-probe",
+                queryLength = query.Length,
+                queryEndsWithEncodedSpaces = query.EndsWith("%20%20", StringComparison.OrdinalIgnoreCase),
+                originalLength = original.Length,
+                originalEqualsQuery = string.Equals(original, query, StringComparison.Ordinal),
+                originalEndsWithEncodedSpaces = original.EndsWith("%20%20", StringComparison.OrdinalIgnoreCase),
+                resolvedQueryLength = escaped.Length,
+                resolvedEndsWithEncodedSpaces = escaped.EndsWith("%20%20", StringComparison.OrdinalIgnoreCase),
+            }));
+        }
+        catch (Exception) { /* Diagnostic output must not change test behavior. */ }
+        using var response = await client.PostAsync(query, null);
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         Assert.NotNull(response.Headers.Location);
         var file = (await response.Content.ReadFromJsonAsync<OrderFileResponse>())!;
+        try
+        {
+            var managedUriQuery = response.RequestMessage?.RequestUri?.GetComponents(UriComponents.Query, UriFormat.UriEscaped);
+            output.WriteLine(JsonSerializer.Serialize(new
+            {
+                stage = "create-response",
+                expectedLength = objectName.Length,
+                expectedTrailingSpaces = objectName.Length - objectName.TrimEnd(' ').Length,
+                expectedContainsNonAscii = objectName.Any(character => character > 127),
+                managedUriEndsWithExpectedEncodedValue = managedUriQuery?.EndsWith("objectName=" + Uri.EscapeDataString(objectName), StringComparison.OrdinalIgnoreCase),
+                actualLength = file.ObjectName.Length,
+                actualTrailingSpaces = file.ObjectName.Length - file.ObjectName.TrimEnd(' ').Length,
+                exactMatch = string.Equals(objectName, file.ObjectName, StringComparison.Ordinal),
+            }));
+        }
+        catch (Exception) { /* Diagnostic output must not change test behavior. */ }
         Assert.Equal($"/orders/Files/{file.Id}", response.Headers.Location!.AbsolutePath);
         return file;
     }
 
-    private static async Task AssertReadbackAsync(WebApplicationFactory<Program> app, HttpClient reader, OrderFileResponse file, string bucket, string objectName)
+    private async Task AssertReadbackAsync(WebApplicationFactory<Program> app, HttpClient reader, OrderFileResponse file, string bucket, string objectName)
     {
         using var fresh = await reader.GetAsync($"/orders/files/{file.Id}");
         Assert.Equal(HttpStatusCode.OK, fresh.StatusCode);
         using var wire = JsonDocument.Parse(await fresh.Content.ReadAsStringAsync());
         Assert.Equal(JsonValueKind.String, wire.RootElement.GetProperty("bucket").ValueKind);
         Assert.Equal(bucket, wire.RootElement.GetProperty("bucket").GetString());
+        try
+        {
+            var actualName = wire.RootElement.GetProperty("objectName").GetString();
+            output.WriteLine(JsonSerializer.Serialize(new
+            {
+                stage = "readback-response",
+                expectedLength = objectName.Length,
+                expectedTrailingSpaces = objectName.Length - objectName.TrimEnd(' ').Length,
+                expectedContainsNonAscii = objectName.Any(character => character > 127),
+                actualLength = actualName?.Length,
+                actualTrailingSpaces = actualName is null ? (int?)null : actualName.Length - actualName.TrimEnd(' ').Length,
+                exactMatch = string.Equals(objectName, actualName, StringComparison.Ordinal),
+            }));
+        }
+        catch (Exception) { /* Diagnostic output must not change test behavior. */ }
         Assert.Equal(objectName, wire.RootElement.GetProperty("objectName").GetString());
         Assert.Equal(file, await reader.GetFromJsonAsync<OrderFileResponse>($"/orders/files/{file.Id}"));
         Assert.Contains(file, (await reader.GetFromJsonAsync<OrderFileResponse[]>($"/orders/{file.OrderId}/files"))!);
