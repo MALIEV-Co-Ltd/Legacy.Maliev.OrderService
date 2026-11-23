@@ -22,7 +22,13 @@ public sealed class OrdersController(IOrderService s, IIdempotencyStore idem) : 
             var lookup = await IdempotentRequests.LookupAsync<UpsertOrderRequest, OrderReadResponse>(idem, User, "order", key, i, c);
             if (lookup.Conflict) return Conflict("Idempotency-Key was already used for a different request.");
             if (lookup.InProgress) return Conflict("An idempotent request with this key is already in progress.");
-            if (lookup.Response is not null) return CreatedAtRoute("GetOrder", new { id = lookup.Response.Id }, lookup.Response);
+            if (lookup.Response is not null)
+            {
+                // A create receipt outlives deletion; do not replay it as a live order.
+                if (!await s.IsCreateReplayAvailableAsync(lookup.Response.Id, c))
+                    return Conflict("The original order is no longer available; reconciliation is required.");
+                return CreatedAtRoute("GetOrder", new { id = lookup.Response.Id }, lookup.Response);
+            }
             OrderReadResponse response;
             try
             {
@@ -40,6 +46,14 @@ public sealed class OrdersController(IOrderService s, IIdempotencyStore idem) : 
         catch (IdempotencyStoreUnavailableException)
         {
             return StatusCode(StatusCodes.Status503ServiceUnavailable, "Idempotency protection is temporarily unavailable.");
+        }
+        catch (OrderDeletionConflictException)
+        {
+            return Conflict("The original order's state requires reconciliation.");
+        }
+        catch (OrderMutationUnavailableException)
+        {
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, "Order reconciliation is temporarily unavailable.");
         }
     }
     [HttpDelete("{id:int}"), RequirePermission(OrderPermissions.Delete, ResourcePathTemplate = "/orders/{id}", IsCritical = true), ServiceFilter(typeof(OrderDeletionAdmissionFilter))]

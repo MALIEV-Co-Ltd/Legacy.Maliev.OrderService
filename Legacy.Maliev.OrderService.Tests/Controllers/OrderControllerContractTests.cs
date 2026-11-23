@@ -205,6 +205,7 @@ public sealed class OrderControllerContractTests
         var service = new Mock<IOrderService>();
         service.Setup(value => value.CreateOrderAsync(It.IsAny<UpsertOrderRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Order(1, "First"));
+        service.Setup(value => value.IsCreateReplayAvailableAsync(1, It.IsAny<CancellationToken>())).ReturnsAsync(true);
         var controller = WithPrincipal(new OrdersController(service.Object, new MemoryIdempotencyStore()), "employee-a");
 
         var first = Assert.IsType<CreatedAtRouteResult>(
@@ -216,6 +217,38 @@ public sealed class OrderControllerContractTests
         service.Verify(
             value => value.CreateOrderAsync(It.IsAny<UpsertOrderRequest>(), It.IsAny<CancellationToken>()),
             Times.Once);
+    }
+
+    [Fact]
+    public async Task CreateOrderIdempotency_DeletedOrderDoesNotReplayCreatedResponse()
+    {
+        var service = new Mock<IOrderService>();
+        service.Setup(value => value.CreateOrderAsync(It.IsAny<UpsertOrderRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Order(1, "First"));
+        service.Setup(value => value.IsCreateReplayAvailableAsync(1, It.IsAny<CancellationToken>())).ReturnsAsync(false);
+        var controller = WithPrincipal(new OrdersController(service.Object, new MemoryIdempotencyStore()), "employee-a");
+
+        Assert.IsType<CreatedAtRouteResult>(await controller.CreateOrderAsync(Request("Same"), "deleted-key", default));
+        Assert.IsType<ConflictObjectResult>(await controller.CreateOrderAsync(Request("Same"), "deleted-key", default));
+
+        service.Verify(value => value.CreateOrderAsync(It.IsAny<UpsertOrderRequest>(), It.IsAny<CancellationToken>()), Times.Once);
+        service.Verify(value => value.IsCreateReplayAvailableAsync(1, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task CreateOrderIdempotency_UnavailableReplayCheckFailsClosed()
+    {
+        var service = new Mock<IOrderService>();
+        service.Setup(value => value.CreateOrderAsync(It.IsAny<UpsertOrderRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Order(1, "First"));
+        service.Setup(value => value.IsCreateReplayAvailableAsync(1, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new OrderMutationUnavailableException());
+        var controller = WithPrincipal(new OrdersController(service.Object, new MemoryIdempotencyStore()), "employee-a");
+
+        Assert.IsType<CreatedAtRouteResult>(await controller.CreateOrderAsync(Request("Same"), "unavailable-replay", default));
+        var replay = Assert.IsType<ObjectResult>(await controller.CreateOrderAsync(Request("Same"), "unavailable-replay", default));
+        Assert.Equal(StatusCodes.Status503ServiceUnavailable, replay.StatusCode);
+        service.Verify(value => value.CreateOrderAsync(It.IsAny<UpsertOrderRequest>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -296,6 +329,7 @@ public sealed class OrderControllerContractTests
         var service = new Mock<IOrderService>();
         service.Setup(value => value.CreateOrderAsync(It.IsAny<UpsertOrderRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Order(1, "First"));
+        service.Setup(value => value.IsCreateReplayAvailableAsync(1, It.IsAny<CancellationToken>())).ReturnsAsync(true);
         var distributed = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
         var idempotency = new DistributedOrderCache(distributed, NullLogger<DistributedOrderCache>.Instance);
         var controller = WithPrincipal(new OrdersController(service.Object, idempotency), "employee-a");

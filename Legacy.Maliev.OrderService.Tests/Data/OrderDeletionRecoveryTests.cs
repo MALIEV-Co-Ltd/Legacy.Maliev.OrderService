@@ -13,6 +13,20 @@ namespace Legacy.Maliev.OrderService.Tests.Data;
 public sealed class OrderDeletionRecoveryTests(OrderDeletionSchemaFixture fixture) : IClassFixture<OrderDeletionSchemaFixture>
 {
     [Fact]
+    public async Task CreateReplayAvailability_UsesLiveOrderAndDeletionReceipt()
+    {
+        var seed = await SeedAsync();
+        await using var orders = Orders(seed);
+        await using var statuses = Statuses(seed);
+        var repository = Repository(orders, statuses);
+
+        Assert.True(await repository.IsCreateReplayAvailableAsync(seed.OrderId, default));
+        Assert.True(await repository.DeleteOrderAsync(seed.OrderId, default));
+        Assert.False(await repository.IsCreateReplayAvailableAsync(seed.OrderId, default));
+        Assert.False(await repository.IsCreateReplayAvailableAsync(int.MaxValue, default));
+    }
+
+    [Fact]
     public async Task SuccessfulDeletion_PersistsCompletedReceiptAndMissingReplayDoesNotReplaceIt()
     {
         var seed = await SeedAsync();
@@ -90,6 +104,7 @@ public sealed class OrderDeletionRecoveryTests(OrderDeletionSchemaFixture fixtur
     [InlineData("file-create")]
     [InlineData("file-put")]
     [InlineData("file-delete")]
+    [InlineData("create-replay")]
     public async Task OrderLifetimeFence_PreventsWriterPassingHeldOrderLock(string operation)
     {
         var seed = await SeedAsync();
@@ -110,6 +125,7 @@ public sealed class OrderDeletionRecoveryTests(OrderDeletionSchemaFixture fixtur
             "file-create" => repository.CreateFileAsync(seed.OrderId, "owned-fixture", "new.stl", deadline.Token),
             "file-put" => repository.UpdateFileAsync(seed.FileId, new UpsertOrderFileRequest(seed.OrderId, "owned-fixture", "updated.stl"), deadline.Token),
             "file-delete" => repository.DeleteFileAsync(seed.FileId, deadline.Token),
+            "create-replay" => repository.IsCreateReplayAvailableAsync(seed.OrderId, deadline.Token),
             _ => repository.DeleteOrderAsync(seed.OrderId, deadline.Token)
         };
         try

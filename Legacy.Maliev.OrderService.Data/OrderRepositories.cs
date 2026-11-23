@@ -55,6 +55,21 @@ public sealed partial class OrderRepository(OrderDbContext orders, OrderStatusDb
             _ => throw new OrderDeletionUnavailableException(),
         };
     }
+    public async Task<bool> IsCreateReplayAvailableAsync(int id, CancellationToken c)
+    {
+        try
+        {
+            return await WithLifetimeAsync([id], async (authority, _, _) =>
+            {
+                if (await IsDeletedLifetimeAsync(authority, id, c)) return false;
+                return await authority.Orders.AsNoTracking().AnyAsync(order => order.Id == id, c);
+            }, c, needsStatusTransaction: false);
+        }
+        catch (Exception exception) when (!c.IsCancellationRequested && IsDatabaseFailure(exception))
+        {
+            throw new OrderMutationUnavailableException();
+        }
+    }
     public async Task<OrderResponse?> GetOrderAsync(int id, CancellationToken c) { await using var authority = FreshOrders(); if (await IsDeletedLifetimeAsync(authority, id, c)) return null; var v = await cache.GetAsync<OrderResponse>(Key(id), c); if (v is not null) return v; v = await ReadOrder(id, c); if (v is not null) await cache.SetAsync(Key(id), v, TimeSpan.FromMinutes(2), c); return v; }
     public async Task<PaginatedResponse<OrderResponse>?> GetOrdersAsync(int? customerId, bool pending, OrderSortType? sort, string? search, int page, int? size, CancellationToken c)
     {

@@ -3,6 +3,7 @@ namespace Legacy.Maliev.OrderService.Application.Interfaces;
 
 public interface IOrderService
 {
+    Task<bool> IsCreateReplayAvailableAsync(int id, CancellationToken c);
     Task<OrderResponse> CreateOrderAsync(UpsertOrderRequest r, CancellationToken c); Task<bool> DeleteOrderAsync(int id, CancellationToken c); Task<OrderResponse?> GetOrderAsync(int id, CancellationToken c); Task<PaginatedResponse<OrderResponse>?> GetOrdersAsync(int? customerId, bool pending, OrderSortType? sort, string? search, int page, int? size, CancellationToken c); Task<UpdateResult> UpdateOrderAsync(int id, UpsertOrderRequest r, DateTimeOffset? expected, CancellationToken c);
     Task<CustomerOrderDetails?> GetCustomerOrderAsync(int customerId, int orderId, CancellationToken c); Task<UpdateResult> CancelCustomerOrderAsync(int customerId, int orderId, CancellationToken c);
     Task<CategoryResponse> CreateCategoryAsync(UpsertCategoryRequest r, CancellationToken c); Task<bool> DeleteCategoryAsync(int id, CancellationToken c); Task<CategoryResponse?> GetCategoryAsync(int id, CancellationToken c); Task<bool> UpdateCategoryAsync(int id, UpsertCategoryRequest r, CancellationToken c);
