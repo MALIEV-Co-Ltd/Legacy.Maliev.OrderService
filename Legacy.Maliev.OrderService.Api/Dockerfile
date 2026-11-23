@@ -5,9 +5,9 @@ ENV GITHUB_ACTIONS=false
 RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 RUN git clone --filter=blob:none --no-checkout https://github.com/MALIEV-Co-Ltd/Legacy.Maliev.ServiceDefaults.git /dependencies/Legacy.Maliev.ServiceDefaults \
-    && git -C /dependencies/Legacy.Maliev.ServiceDefaults checkout 7edcd961024868513fd5f373cab3dcb261197f77 \
+    && git -C /dependencies/Legacy.Maliev.ServiceDefaults checkout 173d63218d9142b34075bca87f5c6d933bcbdfb6 \
     && git clone --filter=blob:none --no-checkout https://github.com/MALIEV-Co-Ltd/Legacy.Maliev.CompatibilityContracts.git /dependencies/Legacy.Maliev.CompatibilityContracts \
-    && git -C /dependencies/Legacy.Maliev.CompatibilityContracts checkout 78e48ffc4ee000df0510cba5e7c7a3c4c4d539d7
+    && git -C /dependencies/Legacy.Maliev.CompatibilityContracts checkout fe17b8cea8ace3eef5434f8b29c9038f5c975613
 COPY nuget.config .
 COPY Legacy.Maliev.OrderService.Api/Legacy.Maliev.OrderService.Api.csproj Legacy.Maliev.OrderService.Api/
 COPY Legacy.Maliev.OrderService.Application/Legacy.Maliev.OrderService.Application.csproj Legacy.Maliev.OrderService.Application/
@@ -20,7 +20,7 @@ RUN dotnet publish Legacy.Maliev.OrderService.Api/Legacy.Maliev.OrderService.Api
     --configuration Release --no-restore --output /app /p:UseAppHost=false \
     -p:MalievWorkspaceRoot=/dependencies
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:11.0 AS runtime
 WORKDIR /app
 COPY --from=build --chown=$APP_UID:$APP_UID /app .
 USER $APP_UID

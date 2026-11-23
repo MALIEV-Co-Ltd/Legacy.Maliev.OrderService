@@ -53,8 +53,8 @@ public sealed class WorkflowContractTests
     public void BuildAndTest_RejectsCommentedDependencySha()
     {
         AssertMutationRejected(
-            "ref: 7edcd961024868513fd5f373cab3dcb261197f77",
-            "ref: main # 7edcd961024868513fd5f373cab3dcb261197f77");
+            "ref: 173d63218d9142b34075bca87f5c6d933bcbdfb6",
+            "ref: main # 173d63218d9142b34075bca87f5c6d933bcbdfb6");
     }
 
     [Fact]
@@ -75,10 +75,10 @@ public sealed class WorkflowContractTests
         Assert.Contains("AddServiceDefaults()", program, StringComparison.Ordinal);
         Assert.Contains("UseStandardMiddleware()", program, StringComparison.Ordinal);
         Assert.DoesNotContain("NativeLogging", program, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("ref: 7edcd961024868513fd5f373cab3dcb261197f77", Workflow, StringComparison.Ordinal);
+        Assert.Contains("ref: 173d63218d9142b34075bca87f5c6d933bcbdfb6", Workflow, StringComparison.Ordinal);
         Assert.Contains("context: .", publisher, StringComparison.Ordinal);
         Assert.Contains("git clone", dockerfile, StringComparison.Ordinal);
-        Assert.Contains("checkout 7edcd961024868513fd5f373cab3dcb261197f77", dockerfile, StringComparison.Ordinal);
+        Assert.Contains("checkout 173d63218d9142b34075bca87f5c6d933bcbdfb6", dockerfile, StringComparison.Ordinal);
         Assert.DoesNotContain("COPY .dependencies/", dockerfile, StringComparison.Ordinal);
     }
 
@@ -129,6 +129,12 @@ public sealed class WorkflowContractTests
         AssertMutationRejected(
             "          use-local-maliev-dependencies: 'true'\n",
             string.Empty);
+    }
+
+    [Fact]
+    public void BuildAndTest_RejectsWrongSdk()
+    {
+        AssertMutationRejected("          dotnet-version: '11.0.100'", "          dotnet-version: '10.0.401'");
     }
 
     [Fact]
@@ -271,7 +277,7 @@ internal static partial class WorkflowContractValidator
             new Dictionary<string, string>(StringComparer.Ordinal)
             {
                 ["repository"] = "MALIEV-Co-Ltd/Legacy.Maliev.ServiceDefaults",
-                ["ref"] = "7edcd961024868513fd5f373cab3dcb261197f77",
+                ["ref"] = "173d63218d9142b34075bca87f5c6d933bcbdfb6",
                 ["path"] = ".dependencies/Legacy.Maliev.ServiceDefaults",
                 ["persist-credentials"] = "false",
             });
@@ -281,7 +287,7 @@ internal static partial class WorkflowContractValidator
             new Dictionary<string, string>(StringComparer.Ordinal)
             {
                 ["repository"] = "MALIEV-Co-Ltd/Legacy.Maliev.CompatibilityContracts",
-                ["ref"] = "78e48ffc4ee000df0510cba5e7c7a3c4c4d539d7",
+                ["ref"] = "fe17b8cea8ace3eef5434f8b29c9038f5c975613",
                 ["path"] = ".dependencies/Legacy.Maliev.CompatibilityContracts",
                 ["persist-credentials"] = "false",
             });
@@ -291,6 +297,7 @@ internal static partial class WorkflowContractValidator
             new Dictionary<string, string>(StringComparer.Ordinal)
             {
                 ["solution"] = "Legacy.Maliev.OrderService.slnx",
+                ["dotnet-version"] = "11.0.100",
                 ["use-local-maliev-dependencies"] = "true",
             });
     }
