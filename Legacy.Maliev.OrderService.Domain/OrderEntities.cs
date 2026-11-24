@@ -36,7 +36,93 @@ public sealed class Order
 public sealed class Process { public int Id { get; set; } public int CategoryId { get; set; } public string Name { get; set; } = string.Empty; public DateTime? CreatedDate { get; set; } public DateTime? ModifiedDate { get; set; } public Category? Category { get; set; } public ICollection<Order> Orders { get; } = []; }
 public sealed class Category { public int Id { get; set; } public string? Name { get; set; } public DateTime? CreatedDate { get; set; } public DateTime? ModifiedDate { get; set; } public ICollection<Process> Processes { get; } = []; }
 public sealed class FileFormat { public int Id { get; set; } public string? Name { get; set; } public string? Extension { get; set; } public DateTime? CreatedDate { get; set; } public DateTime? ModifiedDate { get; set; } }
-public sealed class OrderFile { public int Id { get; set; } public int OrderId { get; set; } public string Bucket { get; set; } = string.Empty; public string ObjectName { get; set; } = string.Empty; public DateTime? CreatedDate { get; set; } public DateTime? ModifiedDate { get; set; } public Order? Order { get; set; } }
-public sealed class OrderStatus { public int Id { get; set; } public string? Name { get; set; } public string? Description { get; set; } public DateTime? CreatedDate { get; set; } public DateTime? ModifiedDate { get; set; } public ICollection<OrderStatusTransition> FromTransitions { get; } = []; public ICollection<OrderStatusTransition> ToTransitions { get; } = []; public ICollection<OrderStatusHistory> History { get; } = []; }
-public sealed class OrderStatusTransition { public int Id { get; set; } public int OrderStatusId { get; set; } public int PossibleStatusId { get; set; } public DateTime? CreatedDate { get; set; } public DateTime? ModifiedDate { get; set; } public OrderStatus? OrderStatus { get; set; } public OrderStatus? PossibleStatus { get; set; } }
-public sealed class OrderStatusHistory { public int Id { get; set; } public int OrderId { get; set; } public int OrderStatusId { get; set; } public DateTime? CreatedDate { get; set; } public DateTime? ModifiedDate { get; set; } public OrderStatus? OrderStatus { get; set; } }
+/// <summary>Represents an object stored for an order.</summary>
+public sealed class OrderFile
+{
+    /// <summary>Gets or sets the identifier.</summary>
+    public int Id { get; set; }
+    /// <summary>Gets or sets the order identifier.</summary>
+    public int OrderId { get; set; }
+    /// <summary>Gets or sets the storage bucket.</summary>
+    public string Bucket { get; set; } = string.Empty;
+    /// <summary>Gets or sets the object name.</summary>
+    public string ObjectName { get; set; } = string.Empty;
+    /// <summary>Gets or sets the creation date.</summary>
+    public DateTime? CreatedDate { get; set; }
+    /// <summary>Gets or sets the modification date.</summary>
+    public DateTime? ModifiedDate { get; set; }
+    /// <summary>Gets or sets the associated order.</summary>
+    public Order? Order { get; set; }
+}
+/// <summary>An order status.</summary>
+public sealed class OrderStatus
+{
+    /// <summary>Gets or sets the identifier.</summary>
+    public int Id { get; set; }
+
+    /// <summary>Gets or sets the status name.</summary>
+    public string? Name { get; set; }
+
+    /// <summary>Gets or sets the status description.</summary>
+    public string? Description { get; set; }
+
+    /// <summary>Gets or sets the creation date.</summary>
+    public DateTime? CreatedDate { get; set; }
+
+    /// <summary>Gets or sets the modification date.</summary>
+    public DateTime? ModifiedDate { get; set; }
+
+    /// <summary>Gets the transitions originating at this status.</summary>
+    public ICollection<OrderStatusTransition> FromTransitions { get; } = [];
+
+    /// <summary>Gets the transitions ending at this status.</summary>
+    public ICollection<OrderStatusTransition> ToTransitions { get; } = [];
+
+    /// <summary>Gets the order history entries for this status.</summary>
+    public ICollection<OrderStatusHistory> History { get; } = [];
+}
+/// <summary>An allowed transition between order statuses.</summary>
+public sealed class OrderStatusTransition
+{
+    /// <summary>Gets or sets the identifier.</summary>
+    public int Id { get; set; }
+
+    /// <summary>Gets or sets the originating status identifier.</summary>
+    public int OrderStatusId { get; set; }
+
+    /// <summary>Gets or sets the allowed destination status identifier.</summary>
+    public int PossibleStatusId { get; set; }
+
+    /// <summary>Gets or sets the creation date.</summary>
+    public DateTime? CreatedDate { get; set; }
+
+    /// <summary>Gets or sets the modification date.</summary>
+    public DateTime? ModifiedDate { get; set; }
+
+    /// <summary>Gets or sets the originating status.</summary>
+    public OrderStatus? OrderStatus { get; set; }
+
+    /// <summary>Gets or sets the destination status.</summary>
+    public OrderStatus? PossibleStatus { get; set; }
+}
+/// <summary>A recorded order status history entry.</summary>
+public sealed class OrderStatusHistory
+{
+    /// <summary>Gets or sets the identifier.</summary>
+    public int Id { get; set; }
+
+    /// <summary>Gets or sets the order identifier.</summary>
+    public int OrderId { get; set; }
+
+    /// <summary>Gets or sets the recorded status identifier.</summary>
+    public int OrderStatusId { get; set; }
+
+    /// <summary>Gets or sets the creation date.</summary>
+    public DateTime? CreatedDate { get; set; }
+
+    /// <summary>Gets or sets the modification date.</summary>
+    public DateTime? ModifiedDate { get; set; }
+
+    /// <summary>Gets or sets the recorded status.</summary>
+    public OrderStatus? OrderStatus { get; set; }
+}
