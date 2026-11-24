@@ -1,36 +1,59 @@
 namespace Legacy.Maliev.OrderService.Domain;
 
+/// <summary>An order.</summary>
 public sealed class Order
 {
+    /// <summary>Gets or sets the identifier.</summary>
     public int Id { get; set; }
+    /// <summary>Gets or sets the customer identifier.</summary>
     public int? CustomerId { get; set; }
+    /// <summary>Gets or sets the employee identifier.</summary>
     public int? EmployeeId { get; set; }
+    /// <summary>Gets or sets the name.</summary>
     public string? Name { get; set; }
+    /// <summary>Gets or sets the description.</summary>
     public string? Description { get; set; }
+    /// <summary>Gets or sets the process identifier.</summary>
     public int ProcessId { get; set; }
+    /// <summary>Gets or sets the material identifier.</summary>
     public int? MaterialId { get; set; }
+    /// <summary>Gets or sets the surface finish identifier.</summary>
     public int? SurfaceFinishId { get; set; }
+    /// <summary>Gets or sets the color identifier.</summary>
     public int? ColorId { get; set; }
+    /// <summary>Gets or sets the quantity.</summary>
     public int Quantity { get; set; }
+    /// <summary>Gets or sets the manufactured quantity.</summary>
     public int Manufactured { get; set; }
+    /// <summary>Gets the remaining quantity.</summary>
     public int? Remaining { get; private set; }
     public decimal? UnitPrice { get; set; }
     public decimal? DiscountPercent { get; set; }
     public decimal? Subtotal { get; private set; }
     public int? CurrencyId { get; set; }
+    /// <summary>Gets or sets the lead time.</summary>
     public int? LeadTime { get; set; }
+    /// <summary>Gets or sets the promised date.</summary>
     public DateTime? PromisedDate { get; set; }
+    /// <summary>Gets or sets the finished date.</summary>
     public DateTime? FinishedDate { get; set; }
+    /// <summary>Gets the turnaround.</summary>
     public int? Turnaround { get; private set; }
     public string? Comment { get; set; }
+    /// <summary>Gets or sets whether social media use is allowed.</summary>
     public bool AllowSocialMedia { get; set; }
+    /// <summary>Gets or sets whether cancellation is allowed.</summary>
     public bool AllowCancellation { get; set; }
     public bool AllowPayment { get; set; }
     public string? TrackingNumber { get; set; }
     public string? OperationKey { get; set; }
+    /// <summary>Gets or sets the created date.</summary>
     public DateTime? CreatedDate { get; set; }
+    /// <summary>Gets or sets the modified date.</summary>
     public DateTime? ModifiedDate { get; set; }
+    /// <summary>Gets or sets the process.</summary>
     public Process? Process { get; set; }
+    /// <summary>Gets the files for the order.</summary>
     public ICollection<OrderFile> Files { get; } = [];
 }
 /// <summary>A process.</summary>
