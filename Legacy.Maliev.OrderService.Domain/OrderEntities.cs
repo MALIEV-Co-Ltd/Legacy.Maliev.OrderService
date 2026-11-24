@@ -33,9 +33,52 @@ public sealed class Order
     public Process? Process { get; set; }
     public ICollection<OrderFile> Files { get; } = [];
 }
-public sealed class Process { public int Id { get; set; } public int CategoryId { get; set; } public string Name { get; set; } = string.Empty; public DateTime? CreatedDate { get; set; } public DateTime? ModifiedDate { get; set; } public Category? Category { get; set; } public ICollection<Order> Orders { get; } = []; }
-public sealed class Category { public int Id { get; set; } public string? Name { get; set; } public DateTime? CreatedDate { get; set; } public DateTime? ModifiedDate { get; set; } public ICollection<Process> Processes { get; } = []; }
-public sealed class FileFormat { public int Id { get; set; } public string? Name { get; set; } public string? Extension { get; set; } public DateTime? CreatedDate { get; set; } public DateTime? ModifiedDate { get; set; } }
+/// <summary>A process.</summary>
+public sealed class Process
+{
+    /// <summary>Gets or sets the identifier.</summary>
+    public int Id { get; set; }
+    /// <summary>Gets or sets the category identifier.</summary>
+    public int CategoryId { get; set; }
+    /// <summary>Gets or sets the name.</summary>
+    public string Name { get; set; } = string.Empty;
+    /// <summary>Gets or sets the created date.</summary>
+    public DateTime? CreatedDate { get; set; }
+    /// <summary>Gets or sets the modified date.</summary>
+    public DateTime? ModifiedDate { get; set; }
+    /// <summary>Gets or sets the category.</summary>
+    public Category? Category { get; set; }
+    /// <summary>Gets the orders for the process.</summary>
+    public ICollection<Order> Orders { get; } = [];
+}
+/// <summary>A category.</summary>
+public sealed class Category
+{
+    /// <summary>Gets or sets the identifier.</summary>
+    public int Id { get; set; }
+    /// <summary>Gets or sets the name.</summary>
+    public string? Name { get; set; }
+    /// <summary>Gets or sets the created date.</summary>
+    public DateTime? CreatedDate { get; set; }
+    /// <summary>Gets or sets the modified date.</summary>
+    public DateTime? ModifiedDate { get; set; }
+    /// <summary>Gets the processes in the category.</summary>
+    public ICollection<Process> Processes { get; } = [];
+}
+/// <summary>A file format.</summary>
+public sealed class FileFormat
+{
+    /// <summary>Gets or sets the identifier.</summary>
+    public int Id { get; set; }
+    /// <summary>Gets or sets the name.</summary>
+    public string? Name { get; set; }
+    /// <summary>Gets or sets the extension.</summary>
+    public string? Extension { get; set; }
+    /// <summary>Gets or sets the created date.</summary>
+    public DateTime? CreatedDate { get; set; }
+    /// <summary>Gets or sets the modified date.</summary>
+    public DateTime? ModifiedDate { get; set; }
+}
 /// <summary>Represents an object stored for an order.</summary>
 public sealed class OrderFile
 {
