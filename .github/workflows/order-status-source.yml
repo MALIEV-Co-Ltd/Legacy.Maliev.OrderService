@@ -48,7 +48,7 @@ jobs:
         run: python3 -B scripts/verify-order-status-source.py status-source-results
       - name: Preserve status source evidence
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: order-status-source-${{ github.sha }}
           path: status-source-results
